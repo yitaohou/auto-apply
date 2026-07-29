@@ -1,0 +1,78 @@
+{
+  "candidate": {
+    "legal_name": "",
+    "preferred_name": "",
+    "email": "",
+    "phone": "",
+    "current_location": "",
+    "linkedin_url": "",
+    "portfolio_url": "",
+    "github_url": ""
+  },
+  "current_status": {
+    "current_role_or_framing": "",
+    "employment_status_answer": "",
+    "available_start_date": "",
+    "notice_period": ""
+  },
+  "education": [
+    {
+      "school": "",
+      "degree": "",
+      "field_of_study": "",
+      "start_month_year": "",
+      "end_month_year": "",
+      "notes": ""
+    }
+  ],
+  "work_experience": [
+    {
+      "company": "",
+      "title": "",
+      "start_month_year": "",
+      "end_month_year": "",
+      "location": "",
+      "description": ""
+    }
+  ],
+  "work_authorization": {
+    "country": "",
+    "current_authorization": "",
+    "requires_sponsorship_now": null,
+    "requires_sponsorship_in_future": null,
+    "answer_exactly_as": "",
+    "notes_for_unclear_forms": "Ask the user before answering if the form wording differs from this profile."
+  },
+  "compensation": {
+    "base_salary_range": "",
+    "total_compensation_range": "",
+    "answer_strategy": "Defer when allowed; otherwise use the range above.",
+    "notes": ""
+  },
+  "accounts": {
+    "preferred_email_account": "",
+    "preferred_linkedin_account": "",
+    "notes": "Used when an ATS offers multiple login identities."
+  },
+  "voluntary_self_identification": {
+    "strategy": "prefer_not_to_say",
+    "fill_automatically": true,
+    "gender": "",
+    "race_ethnicity": "",
+    "veteran_status": "",
+    "disability_status": "",
+    "notes": "Default to Prefer not to say unless the user explicitly stores exact answers."
+  },
+  "never_guess": [
+    "legal name",
+    "work authorization",
+    "visa / sponsorship",
+    "employment status",
+    "salary expectations",
+    "relocation",
+    "degree dates",
+    "employment dates",
+    "voluntary self-identification",
+    "background check or non-compete questions"
+  ]
+}
