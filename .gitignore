@@ -1,6 +1,6 @@
 # Keep personal data out of this skill directory (it may be published or versioned in dotfiles)
 *.csv
-!templates/**/*.csv
+!skills/auto-apply/templates/**/*.csv
 candidate_profile.json
 answer_bank.md
 queue.txt

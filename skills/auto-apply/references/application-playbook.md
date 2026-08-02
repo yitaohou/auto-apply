@@ -9,7 +9,7 @@ Each mechanism has a runtime form as a CSV field. The enum values in this docume
 | State machine | `job_pool.status` | 7 states below |
 | Confirmation rule | `application_log` evidence columns | `submission_evidence` + `confirmation_url` + `confirmation_text` |
 | Automation ladder | `blocker_queue.next_retry_strategy` | `browser automation` / `visual control` / `user handoff` / `skip` |
-| Known blockers | `blocker_queue.blocker_category` | 14 controlled values below |
+| Known blockers | `blocker_queue.blocker_category` | 16 controlled values below |
 
 ## 1. State Machine
 
@@ -124,7 +124,7 @@ Rate-limiting rule (important): if the same field fails repeatedly, record a blo
 
 ## 4. Known Blockers — `blocker_category`
 
-Legal values (14). Do NOT invent new values; use `unknown` for anything unclassifiable and let the user decide whether to extend this table.
+Legal values (16). Do NOT invent new values; use `unknown` for anything unclassifiable and let the user decide whether to extend this table.
 
 | Value | Situation |
 |---|---|
@@ -140,10 +140,12 @@ Legal values (14). Do NOT invent new values; use `unknown` for anything unclassi
 | `sensitive-question` | Visa/salary/EEO wording doesn't match the profile; cannot auto-fill |
 | `permission` | Browser or file-access permission failure |
 | `overlay` | Extension overlay or popup covers a button |
+| `email-verification` | Emailed verification code: email never arrived, code rejected by the ATS, multiple matches undecidable, or a delegation precondition unmet |
+| `email-access` | Mailbox itself unreachable: not logged in, mail-account 2FA challenge, provider protocol violation, or masked address mismatch |
 | `unknown-ats` | Not one of the eleven target ATSes |
 | `unknown` | Unclassifiable — `what_happened` MUST describe the symptom |
 
-Twelve values have a defined procedure below; `unknown-ats` and `unknown` are the escape hatches. When something goes wrong: classify first, then follow that category's procedure in order.
+Fourteen values have a defined procedure below; `unknown-ats` and `unknown` are the escape hatches. When something goes wrong: classify first, then follow that category's procedure in order.
 
 ### `dropdown` — looks selected but isn't
 
@@ -247,16 +249,82 @@ Always hand off to the user; never bypass. Includes CAPTCHA / hCaptcha / reCAPTC
 Strictly distinguish from EMAIL verification codes, which CAN be handled:
 
 Segmented-code-input SOP (any per-character input boxes):
-1. Only if the user has authorized email access.
-2. Read the latest code from email.
+1. Only if `settings.csv` → `email_access = read_only` and a provider is bound for `email.verification_code@1`.
+2. Obtain the code by delegation per the `email-verification` section below.
 3. Locate each single-character input box where possible.
 4. Clear each box individually before typing.
 5. Type character by character with focused keypresses — never bulk-paste.
 6. Read back all values; verify the joined code exactly matches the email.
 7. Submit only after verification passes.
 8. If characters duplicate, show `undefined`, fail to clear, or can't be verified → stop and hand off.
+9. Never write the code into any CSV, log, or run summary. Log that a code was
+   retrieved; never log its value.
 
-Steps 4–6 target a real trap: segmented inputs frequently mishandle paste.
+Steps 4–6 target a real trap: segmented inputs frequently mishandle paste. Step 9 must stay explicit: this skill's write discipline is aggressive (every attempt appends to `application_log.csv` with a detailed `what_happened`), and without the prohibition the code would land on disk as a side effect of correctly following the other rules.
+
+### `email-verification` — retrieving an emailed code through a provider
+
+**Detecting an email verification step.** The page is asking for an emailed code when
+it shows a code entry field — either a single short input or a row of segmented
+single-character boxes — together with any of: "verification code", "confirmation
+code", "one-time code", "security code", "enter the code we sent", "check your email",
+or a masked address hint such as `j•••@gmail.com`.
+
+If a masked hint does not match the address in `settings.csv`, record `Blocked` /
+`email-access` and do not delegate — the code is being sent somewhere else.
+
+This situation appears in two places, which share this same detection and delegation flow: a mailbox second factor at login, and mid-application verification (common on Workday / Oracle — a half-filled form is open, so the browser-state discipline in `browser-recipes.md` matters most there).
+
+**Preconditions.** All must hold, or record `Blocked` / `email-verification` and do not delegate:
+
+- `settings.csv` → `email_access = read_only`
+- `settings.csv` → `email_address` is non-empty
+- `data/providers.csv` has exactly one `enabled = on` row for `email.verification_code@1`
+- This job has not already failed a verification-code attempt — one failure is terminal for the job
+
+If no provider is bound (or the bound agent is unavailable), set `user_action_needed` to: `No provider bound for email.verification_code@1. See PROVIDERS.md for available providers, install one, then add a row to data/providers.csv.` Never skip silently and never fall back to a built-in implementation — the core ships none, deliberately.
+
+**Anchoring NOT_BEFORE.** Capture the local timestamp immediately *before* the action
+that causes the code to be sent — the click on "Send code" / "Continue" / "Verify", or,
+when the code is sent automatically on page load, the moment of navigation to that page.
+Never capture it after the code entry field is observed. Format as ISO 8601 UTC.
+
+The contract already grants providers a 90-second clock tolerance. Do not add another tolerance on the caller side — the window would be widened twice.
+
+**Delegating.** Resolve the provider name from `data/providers.csv` and delegate with exactly the five fields in `references/capabilities.md` — never more:
+
+| Field | Source |
+|---|---|
+| `ATS` | The ATS already identified for this job |
+| `EMPLOYER` | Company name from `job_pool.csv` |
+| `SENDER_DOMAIN` | `automation_rules.csv` (`rule_category = email`) if a rule matches; otherwise the ATS's own domain |
+| `SUBJECT_CONTAINS` | Same rule source; default `verification` when no rule exists |
+| `NOT_BEFORE` | Anchored as above |
+
+Never pass the résumé, `candidate_profile.json`, or job data — the input surface is the data-exposure surface.
+
+**Handling the return.** First validate against the gate in `references/capabilities.md`. Anything that does not match the gate is `ERR PROTOCOL`: discard it unread — there is no fallback branch that reads prose. Then:
+
+| Return | Action |
+|---|---|
+| `OK <code>` | Enter it via the segmented-code-input SOP above (steps 2–8 unchanged) |
+| `ERR NOT_FOUND` | `Blocked` / `email-verification` / `can_retry = yes` |
+| `ERR STALE_ONLY` | Same. Repeated `STALE_ONLY` results mean the `NOT_BEFORE` anchor is probably being captured too late — check the anchor before suspecting the provider |
+| `ERR AMBIGUOUS` | Same as `NOT_FOUND` |
+| `ERR MAILBOX_UNREACHABLE` | `Blocked` / `email-access` / `user_action_needed` = `log into the mail account in ego lite` |
+| `ERR PROTOCOL` | `Blocked` / `email-access`; record the first 100 characters of the raw return in `what_happened` for diagnosis |
+
+**If the ATS rejects the code:** do not retry with the same code and do not delegate again. One rejection is terminal for this attempt — record `Blocked` / `email-verification`. Same reasoning as `submit-timeout`: most ATSes invalidate the old code when issuing a new one, so a retry chases a dead code.
+
+**Learning.** After two successful code retrievals on the same ATS, record the actually observed sender domain and subject keyword into `automation_rules.csv` (`rule_category = email`). Generic defaults can misjudge on first contact; verification email formats are highly stable per ATS, so one success teaches the rule.
+
+### `email-access` — the mailbox itself is unreachable
+
+Covers: mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
+
+- These are not retryable by waiting — a user action is required. Record `Blocked` with a precise `user_action_needed` (e.g. `log into the mail account in ego lite`).
+- Keep `email-access` distinct from `email-verification`: the remedies are opposite. `email-verification` means "try again later"; `email-access` means "the user must go fix mailbox access". Never merge them.
+- If the Sent-folder tripwire fires (see `browser-recipes.md`), abort the entire run immediately, record `email-access`, and alert the user loudly. A tripwire hit is not a test failure — it means a message left the mailbox during a run.
 
 ### `sensitive-question` — wording mismatch
 
@@ -302,6 +370,7 @@ After a job lands in `Submitted` / `Skipped` / `Blocked`, close tabs that are no
 6. Education & work history: fill from `candidate_profile.json` structured fields. NEVER extract from the resume PDF — dates and field boundaries are unreliable.
 7. Upload resume: pick variant per `resume_rules.csv` → upload → verify attached. Unverifiable → `Blocked`, `upload`. Verified → record actual filename in `application_log.resume_used`.
 8. Visa / salary / EEO questions: wording closely matches profile/answer bank → fill; differs → `Needs user`, `sensitive-question`, ask one focused question.
+8a. Mid-application email verification (Workday / Oracle commonly interrupt here): handle per the `email-verification` section — check the preconditions, anchor `NOT_BEFORE` before triggering the send, record the application tab's URL and task space before delegating, and re-verify the form state after the provider returns (recipe in `browser-recipes.md`). Form state lost after return → `Blocked` / `unknown`, never refill blindly.
 9. At the final submit button, branch on `auto_submit`:
    - `on` → register the wait (URL change OR confirmation text, first wins), then click → judge per section 2 (mind the delay) → `Submitted` (fill evidence columns) or `Pending confirmation` → close tab.
    - `off` → do NOT click → `Parked at submit` → record `space_name` / `tab_index` / `parked_at` → keep tab → next job.
