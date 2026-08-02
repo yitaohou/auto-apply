@@ -22,6 +22,14 @@ Contract: `contracts/email.verification_code.v1.md`
 
 ### Installing
 
+The recommended path is provider registration: ask the agent to register providers.
+It presents the options from this file, installs your pick after you confirm the
+exact command, asks the capability's configuration questions, and writes the binding
+row — every value only after your explicit choice, echoed back verbatim
+(`skills/auto-apply/references/register.md`).
+
+Manual alternative:
+
 1. Install the provider's plugin from its repository
 2. Bind it in `data/providers.csv`:
 

@@ -282,7 +282,7 @@ This situation appears in two places, which share this same detection and delega
 - `data/providers.csv` has exactly one `enabled = on` row for `email.verification_code@1`
 - This job has not already failed a verification-code attempt — one failure is terminal for the job
 
-If no provider is bound (or the bound agent is unavailable), set `user_action_needed` to: `No provider bound for email.verification_code@1. See PROVIDERS.md for available providers, install one, then add a row to data/providers.csv.` Never skip silently and never fall back to a built-in implementation — the core ships none, deliberately.
+If no provider is bound (or the bound agent is unavailable), set `user_action_needed` to: `No provider bound for email.verification_code@1. Run provider registration (references/register.md), or see PROVIDERS.md and add a row to data/providers.csv yourself.` Never skip silently, never fall back to a built-in implementation — the core ships none, deliberately — and never enter registration mid-run: record the blocker and move on.
 
 **Anchoring NOT_BEFORE.** Capture the local timestamp immediately *before* the action
 that causes the code to be sent — the click on "Send code" / "Continue" / "Verify", or,
