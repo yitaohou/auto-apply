@@ -140,8 +140,8 @@ Legal values (16). Do NOT invent new values; use `unknown` for anything unclassi
 | `sensitive-question` | Visa/salary/EEO wording doesn't match the profile; cannot auto-fill |
 | `permission` | Browser or file-access permission failure |
 | `overlay` | Extension overlay or popup covers a button |
-| `email-verification` | Emailed verification code: email never arrived, code rejected by the ATS, multiple matches undecidable, or a delegation precondition unmet |
-| `email-access` | Mailbox itself unreachable: not logged in, mail-account 2FA challenge, provider protocol violation, or masked address mismatch |
+| `email-verification` | The verification attempt itself failed — retry later or give up on this job: email never arrived, code rejected by the ATS, multiple matches undecidable, or this job already failed a code attempt |
+| `email-access` | The email channel is unavailable and only a user action fixes it: `email_access` off, `email_address` missing, no provider bound, mailbox not logged in, mail-account 2FA challenge, provider protocol violation, masked address mismatch, or a tripwire hit |
 | `unknown-ats` | Not one of the eleven target ATSes |
 | `unknown` | Unclassifiable — `what_happened` MUST describe the symptom |
 
@@ -275,12 +275,14 @@ If a masked hint does not match the address in `settings.csv`, record `Blocked` 
 
 This situation appears in two places, which share this same detection and delegation flow: a mailbox second factor at login, and mid-application verification (common on Workday / Oracle — a half-filled form is open, so the browser-state discipline in `browser-recipes.md` matters most there).
 
-**Preconditions.** All must hold, or record `Blocked` / `email-verification` and do not delegate:
+**Preconditions.** Check before delegating; any failure means do not delegate:
 
-- `settings.csv` → `email_access = read_only`
-- `settings.csv` → `email_address` is non-empty
-- `data/providers.csv` has exactly one `enabled = on` row for `email.verification_code@1`
-- This job has not already failed a verification-code attempt — one failure is terminal for the job
+- `settings.csv` → `email_access = read_only` — else `Blocked` / `email-access`
+- `settings.csv` → `email_address` is non-empty — else `Blocked` / `email-access`
+- `data/providers.csv` has exactly one `enabled = on` row for `email.verification_code@1` — else `Blocked` / `email-access`
+- This job has not already failed a verification-code attempt — else `Blocked` / `email-verification`; one failure is terminal for the job
+
+The category follows the remedy, not the flow stage: the first three are configuration gaps that no amount of retrying fixes — only a user action does, which is exactly what `email-access` signals. The fourth records that the verification itself already failed.
 
 If no provider is bound (or the bound agent is unavailable), set `user_action_needed` to: `No provider bound for email.verification_code@1. Run provider registration (references/register.md), or see PROVIDERS.md and add a row to data/providers.csv yourself.` Never skip silently, never fall back to a built-in implementation — the core ships none, deliberately — and never enter registration mid-run: record the blocker and move on.
 
@@ -320,7 +322,7 @@ Never pass the résumé, `candidate_profile.json`, or job data — the input sur
 
 ### `email-access` — the mailbox itself is unreachable
 
-Covers: mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
+Covers: `email_access = off`, `email_address` missing, no provider bound (or the bound agent unavailable), mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
 
 - These are not retryable by waiting — a user action is required. Record `Blocked` with a precise `user_action_needed` (e.g. `log into the mail account in ego lite`).
 - Keep `email-access` distinct from `email-verification`: the remedies are opposite. `email-verification` means "try again later"; `email-access` means "the user must go fix mailbox access". Never merge them.
