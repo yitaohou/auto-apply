@@ -10,6 +10,12 @@ to implement a contract is not listed until verified.
 To add yours: host it in your own repository, then open a PR adding a row here. Your
 code does not go into this repo — only the row does.
 
+Every provider's repository must include a README that declares the access setup a
+user performs before first use — e.g. logging the mailbox into ego lite for a
+browser-based reader, or granting OAuth consent for an API-based one. The
+registration flow relays those steps to the user; the core itself assumes nothing
+about how a provider reaches the mailbox.
+
 ---
 
 ## email.verification_code@1

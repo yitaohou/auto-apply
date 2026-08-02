@@ -315,7 +315,7 @@ Expect the delegation to take up to about three minutes: the contract requires p
 | `ERR NOT_FOUND` | `Blocked` / `email-verification` / `can_retry = yes` |
 | `ERR STALE_ONLY` | Same. Repeated `STALE_ONLY` results mean the `NOT_BEFORE` anchor is probably being captured too late — check the anchor before suspecting the provider |
 | `ERR AMBIGUOUS` | Same as `NOT_FOUND` |
-| `ERR MAILBOX_UNREACHABLE` | `Blocked` / `email-access` / `user_action_needed` = `log into the mail account in ego lite` |
+| `ERR MAILBOX_UNREACHABLE` | `Blocked` / `email-access` / `user_action_needed` = `restore the provider's mailbox access — its README states how` |
 | `ERR PROTOCOL` | `Blocked` / `email-access`; record the first 100 characters of the raw return in `what_happened` for diagnosis |
 
 **If the ATS rejects the code:** do not retry with the same code and do not delegate again. One rejection is terminal for this attempt — record `Blocked` / `email-verification`. Same reasoning as `submit-timeout`: most ATSes invalidate the old code when issuing a new one, so a retry chases a dead code.
@@ -326,7 +326,7 @@ Expect the delegation to take up to about three minutes: the contract requires p
 
 Covers: `email_access = off`, `email_address` missing, no provider bound (or the bound agent unavailable), mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
 
-- These are not retryable by waiting — a user action is required. Record `Blocked` with a precise `user_action_needed` (e.g. `log into the mail account in ego lite`).
+- These are not retryable by waiting — a user action is required. Record `Blocked` with a precise `user_action_needed` (e.g. restoring the provider's mailbox access the way its README describes).
 - Keep `email-access` distinct from `email-verification`: the remedies are opposite. `email-verification` means "try again later"; `email-access` means "the user must go fix mailbox access". Never merge them.
 - If the Sent-folder tripwire fires (see `browser-recipes.md`), abort the entire run immediately, record `email-access`, and alert the user loudly. A tripwire hit is not a test failure — it means a message left the mailbox during a run.
 
