@@ -305,6 +305,8 @@ The contract already grants providers a 90-second clock tolerance. Do not add an
 
 Never pass the résumé or `candidate_profile.json` — the input surface is the data-exposure surface, and the five fields above are its entire extent.
 
+Expect the delegation to take up to about three minutes: the contract requires providers to keep observing the mailbox until `NOT_BEFORE` + 180 seconds before concluding `NOT_FOUND` or `STALE_ONLY`. Do not treat a long-running delegation as a failure and do not delegate a second time in parallel.
+
 **Handling the return.** First validate against the gate in `references/capabilities.md`. Anything that does not match the gate is `ERR PROTOCOL`: discard it unread — there is no fallback branch that reads prose. Then:
 
 | Return | Action |

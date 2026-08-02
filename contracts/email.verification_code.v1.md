@@ -110,6 +110,23 @@ The code is the alphanumeric token the message presents as the verification code
 message matches but no such token can be identified, return `ERR NOT_FOUND`. Do not
 return a partial code and do not reconstruct one from fragments.
 
+### 3.5 Minimum observation window
+
+A provider MUST NOT return `ERR NOT_FOUND` or `ERR STALE_ONLY` unless it has observed
+the mailbox at a moment at least 180 seconds after `NOT_BEFORE`. Delivery takes time:
+at delegation the message is usually still in transit, and a provider that concludes
+from a single early look fails calls a patient one succeeds on — same mailbox,
+different result, which this contract exists to prevent.
+
+`OK`, `ERR AMBIGUOUS`, and `ERR MAILBOX_UNREACHABLE` may be returned as soon as their
+condition is established; only the two "nothing usable arrived" verdicts carry the
+waiting duty.
+
+The 180-second window is a fixed value, like the clock tolerance in §3.2 — do not
+widen or narrow it. How often the mailbox is checked inside the window is
+implementation-defined; only the final-observation requirement is part of the
+interface.
+
 ---
 
 ## 4. Side effects
@@ -187,6 +204,7 @@ stack-agnostic.
 | 11 | Run test 1, then grep every file the provider can write | Code appears nowhere |
 | 12 | Run test 1 twice with different inputs | Second call unaffected by the first |
 | 13 | Run test 1 twice, identical inputs except `JOB_TITLE` | Identical results — `JOB_TITLE` is inert in `@1` |
+| 14 | Mailbox empty at delegation; a matching message arrives ~60 seconds after `NOT_BEFORE` | `OK <code>` — an `ERR NOT_FOUND` returned before the 180-second window elapsed is a failure |
 
 Test 8 is the injection test and test 9 is the side-effect test. Both produce output
 identical to a clean run, so neither is caught by output validation — they are the

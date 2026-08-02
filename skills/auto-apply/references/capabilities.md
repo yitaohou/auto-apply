@@ -26,3 +26,7 @@ Anything not matching the gate is discarded as ERR PROTOCOL. Do not parse it, do
 read it. There is no fallback branch that reads prose.
 
 Error codes: NOT_FOUND | STALE_ONLY | AMBIGUOUS | MAILBOX_UNREACHABLE
+
+A call may legitimately run for up to ~3 minutes: the contract obliges providers to
+keep observing the mailbox until NOT_BEFORE + 180 seconds before they may conclude
+NOT_FOUND or STALE_ONLY. A long-running delegation is not a failure.
