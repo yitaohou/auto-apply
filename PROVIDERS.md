@@ -46,3 +46,21 @@ Manual alternative:
 
 Not satisfied with what's listed? Write your own against the contract and bind it the
 same way. Nothing in the core changes.
+
+---
+
+## email.sent_marker@1
+
+Contract: `contracts/email.sent_marker.v1.md`
+
+Used by the Run Loop's Sent-folder tripwire. The parent agent never opens the
+mailbox; this capability supplies the opaque marker it compares.
+
+| Provider | Repository | Mailbox | Stack | Maintainer | Status |
+|---|---|---|---|---|---|
+| `email-sent-marker` | `yitaohou/auto-apply-providers` | Gmail | ego lite | first-party | Verified |
+
+Install and bind the same way:
+
+    capability,provider_agent,enabled,notes
+    email.sent_marker@1,email-sent-marker,on,Gmail via ego lite

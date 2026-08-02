@@ -301,24 +301,17 @@ cliLog(JSON.stringify({ checkpoint: 'pre-delegation', url: before.url }))
 // anything lost → Blocked / unknown. Never refill blindly.
 ```
 
-## Recipe: Sent-folder tripwire
+## Recipe: Sent-folder tripwire (delegated)
 
-The parent agent cannot be made unable to send mail — it holds full JS execution because form-filling requires it. Prevention being impossible, detection is mandatory: that is this recipe's entire reason to exist.
+The parent agent cannot be made unable to send mail — it holds full JS execution because form-filling requires it. Prevention being impossible, detection is mandatory: that is the tripwire's entire reason to exist.
 
-At RUN START (only when `email_access = read_only`): open the mailbox's Sent folder, read the identity of the TOPMOST message (sent time + subject), write it to `data/.tripwire.json`, close the tab. Use the top message's identity, not a message count — Gmail's Sent view does not display a reliable count, and the top row is cheap to read.
+The parent never opens the mailbox itself. Reading is delegated to the provider bound for `email.sent_marker@1` (see `capabilities.md`); the parent only stores, compares, and alarms:
 
-At RUN END: read the topmost Sent message again and compare. ANY change → a message was sent during the run: abort, record `Blocked` / `email-access`, and alert the user loudly. A tripwire hit means the agent's model of its own behavior is wrong; continuing means acting on a wrong model. A false positive only costs one aborted batch.
+- **RUN START** (only when `email_access = read_only` and a provider is bound for `email.sent_marker@1`): delegate, validate the return against the gate, store the `OK` marker in `data/.tripwire.json`.
+- **RUN END**: delegate again and compare for equality with the stored marker. ANY difference → a message was sent during the run: abort, record `Blocked` / `email-access`, and alert the user loudly. A tripwire hit means the agent's model of its own behavior is wrong; continuing means acting on a wrong model. A false positive only costs one aborted batch.
+- `ERR MAILBOX_UNREACHABLE` (either end) or no `email.sent_marker@1` binding while `email_access = read_only`: the tripwire cannot run — tell the user loudly at run start, or record `Blocked` / `email-access` at run end, and advise checking the Sent folder manually. Never substitute by reading the mailbox yourself.
 
-```js
-const tab = await openOrReuseTab('https://mail.google.com/mail/u/0/#sent', { wait: true, timeout: 30 })
-const snap = await snapshotText()
-// The first message row in the Sent list carries subject + date text; capture the raw row.
-const topRow = (snap.split('\n').find(l => /row|link/i.test(l) && /\d{1,2}:\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/i.test(l)) ?? '').trim()
-cliLog(JSON.stringify({ tripwire_baseline: topRow }))   // parent writes this into data/.tripwire.json
-await closeTab(tab.targetId)
-```
-
-The stored baseline contains a sent time and subject only — never a verification code, never credentials.
+The stored marker is an opaque 16-hex digest — it contains no message text, no code, no credentials, and the parent never sees any mailbox content at all.
 
 ## Verification pass over parked tabs (after the user clicks)
 
@@ -330,4 +323,4 @@ One script, bounded per tab: `takeOverTaskSpace` → `listTabs()` → for each p
 - No importing Playwright or launching any other browser. ego-browser IS the automation layer.
 - No invented helper names — check `~/.claude/skills/ego-browser/SKILL.md` and `help('<name>')` when unsure.
 - No screenshots as the default observation method — `snapshotText()` first; screenshots are ladder level 3.
-- Nothing but reads against any mailbox domain. Never compose, reply, forward, or send; never delete, archive, or label; never touch mail settings. The only permitted mailbox operations are the Sent-folder tripwire reads above — everything else belongs to a bound provider.
+- No mailbox operations at all — the parent agent never navigates to a mailbox domain for any reason. Every mailbox read, the Sent-folder tripwire included, belongs to a bound provider. Never compose, reply, forward, or send; never delete, archive, or label; never touch mail settings.
