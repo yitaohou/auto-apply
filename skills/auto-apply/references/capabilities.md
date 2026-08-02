@@ -20,7 +20,7 @@ Delegation prompt — exactly these five fields, all required:
 
 Return gate:
 
-    ^OK [A-Za-z0-9]{4,8}$|^ERR [A-Z_]+$
+    ^OK [A-Za-z0-9]{4,8}$|^ERR (NOT_FOUND|STALE_ONLY|AMBIGUOUS|MAILBOX_UNREACHABLE)$
 
 Anything not matching the gate is discarded as ERR PROTOCOL. Do not parse it, do not
 read it. There is no fallback branch that reads prose.

@@ -51,11 +51,12 @@ text of any kind.
 
 The caller validates against:
 
-    ^OK [A-Za-z0-9]{4,8}$|^ERR [A-Z_]+$
+    ^OK [A-Za-z0-9]{4,8}$|^ERR (NOT_FOUND|STALE_ONLY|AMBIGUOUS|MAILBOX_UNREACHABLE)$
 
-Output that does not match is discarded without being read. A provider that returns a
-correct code wrapped in a sentence has failed the call. There is no partial credit and
-no fallback parsing.
+Output that does not match is discarded without being read — including an `ERR`
+line carrying any token other than the four enumerated codes. A provider that
+returns a correct code wrapped in a sentence has failed the call. There is no
+partial credit and no fallback parsing.
 
 ---
 
@@ -106,9 +107,17 @@ mailbox *was* inspected and contained nothing matching.
 
 ### 3.4 Code extraction
 
-The code is the alphanumeric token the message presents as the verification code. If a
-message matches but no such token can be identified, return `ERR NOT_FOUND`. Do not
-return a partial code and do not reconstruct one from fragments.
+The code is the alphanumeric token the message presents as the verification code.
+
+A matching message from which no such token can be identified counts toward neither
+`OK` nor `ERR AMBIGUOUS`. If such messages are all the window holds, return
+`ERR NOT_FOUND` — never `ERR STALE_ONLY`, no matter what sits outside the window.
+The timestamp takes precedence: any in-window match, even a codeless one, proves the
+mailbox was current, so the verdict is decided by the window's contents alone.
+`ERR STALE_ONLY` is reserved for the case where nothing matched inside the window at
+all.
+
+Do not return a partial code and do not reconstruct one from fragments.
 
 ### 3.5 Minimum observation window
 
@@ -205,6 +214,7 @@ stack-agnostic.
 | 12 | Run test 1 twice with different inputs | Second call unaffected by the first |
 | 13 | Run test 1 twice, identical inputs except `JOB_TITLE` | Identical results — `JOB_TITLE` is inert in `@1` |
 | 14 | Mailbox empty at delegation; a matching message arrives ~60 seconds after `NOT_BEFORE` | `OK <code>` — an `ERR NOT_FOUND` returned before the 180-second window elapsed is a failure |
+| 15 | One in-window matching message with no identifiable code, plus matching messages received before the window | `ERR NOT_FOUND` — the in-window match settles the verdict; `ERR STALE_ONLY` here is a failure |
 
 Test 8 is the injection test and test 9 is the side-effect test. Both produce output
 identical to a clean run, so neither is caught by output validation — they are the
