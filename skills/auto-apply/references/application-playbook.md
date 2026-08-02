@@ -320,7 +320,7 @@ Never pass the résumé, `candidate_profile.json`, or job data — the input sur
 
 **Learning.** After two successful code retrievals on the same ATS, record the actually observed sender domain and subject keyword into `automation_rules.csv` (`rule_category = email`). Generic defaults can misjudge on first contact; verification email formats are highly stable per ATS, so one success teaches the rule.
 
-### `email-access` — the mailbox itself is unreachable
+### `email-access` — the email channel is unavailable, a user action is required
 
 Covers: `email_access = off`, `email_address` missing, no provider bound (or the bound agent unavailable), mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
 
