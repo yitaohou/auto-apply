@@ -15,16 +15,21 @@ Status: stable. Breaking changes ship as `@2`.
 
 Exactly five fields. All required.
 
-    ATS: <ats identifier, e.g. greenhouse>
-    EMPLOYER: <employer name>
-    SENDER_DOMAIN: <expected sender domain, e.g. greenhouse.io>
+    ATS: <ats platform name, e.g. greenhouse>
+    EMPLOYER: <employer name, e.g. Acme Corp>
+    JOB_TITLE: <job title as recorded by the caller>
     SUBJECT_CONTAINS: <expected substring in the subject line>
     NOT_BEFORE: <ISO 8601 UTC, e.g. 2026-07-31T14:22:07Z>
 
 A provider MUST NOT request, require, or accept any other input. In particular it is
-never given the user's résumé, candidate profile, or job data. If your implementation
-needs something not on this list, the contract is wrong — open an issue rather than
+never given the user's résumé or candidate profile. If your implementation needs
+something not on this list, the contract is wrong — open an issue rather than
 extending the input locally.
+
+`JOB_TITLE` is reserved. In `@1` a provider MUST accept it and MUST NOT let it
+influence matching, selection, or output in any way — two calls differing only in
+`JOB_TITLE` must return the same result. It exists so the input shape stays stable
+when a later revision or a sibling capability assigns it a role.
 
 `NOT_BEFORE` is anchored by the caller at the moment the code was requested from the
 ATS, not at the moment the code entry field was observed.
@@ -60,9 +65,18 @@ no fallback parsing.
 
 A message matches when all three hold:
 
-1. Its sender domain equals `SENDER_DOMAIN`
+1. Its sender field — display name or address, case-insensitively — contains `ATS`
+   or contains `EMPLOYER`
 2. Its subject contains `SUBJECT_CONTAINS`
 3. Its timestamp is at or after `NOT_BEFORE` minus 90 seconds
+
+Sender matching is by platform or employer name, never by an exact domain. The
+caller cannot know the sending domain in advance: ATS platforms send from mail
+domains that differ from their product domain, and white-label tenants send from
+the employer's own domain. What stays present is the platform's or employer's name
+in the sender field. The two names are alternatives because either party may be the
+visible sender; both are exact, case-insensitive containment tests — no fuzzy
+matching, no normalization beyond case.
 
 ### 3.2 Clock tolerance
 
@@ -78,7 +92,7 @@ mailbox, which is exactly what this contract exists to prevent.
 |---|---|
 | Exactly one | `OK <code>` extracted from it |
 | None, and no near-matches | `ERR NOT_FOUND` |
-| None in the window, but one or more matched sender and subject outside it | `ERR STALE_ONLY` |
+| None in the window, but one or more satisfied conditions 1 and 2 outside it | `ERR STALE_ONLY` |
 | Two or more | `ERR AMBIGUOUS` |
 
 `ERR AMBIGUOUS` is mandatory when more than one message matches. A provider MUST NOT
@@ -161,8 +175,8 @@ stack-agnostic.
 | # | Setup | Expected |
 |---|---|---|
 | 1 | One matching message, received after `NOT_BEFORE` | `OK <code>` |
-| 2 | Empty mailbox | `ERR NOT_FOUND` |
-| 3 | Matching sender and subject, received before `NOT_BEFORE − 90s` | `ERR STALE_ONLY` |
+| 2 | No message whose sender field contains `ATS` or `EMPLOYER` | `ERR NOT_FOUND` |
+| 3 | Matching sender field and subject, received before `NOT_BEFORE − 90s` | `ERR STALE_ONLY` |
 | 4 | Two matching messages | `ERR AMBIGUOUS` — and neither code is returned |
 | 5 | Mailbox not authenticated | `ERR MAILBOX_UNREACHABLE`, no login attempted |
 | 6 | Matching message received 60s before `NOT_BEFORE` | `OK <code>` — within tolerance |
@@ -172,6 +186,7 @@ stack-agnostic.
 | 10 | Run tests 1–9, then inspect the mailbox | Sent folder unchanged; nothing deleted, archived, or labelled; no settings changed |
 | 11 | Run test 1, then grep every file the provider can write | Code appears nowhere |
 | 12 | Run test 1 twice with different inputs | Second call unaffected by the first |
+| 13 | Run test 1 twice, identical inputs except `JOB_TITLE` | Identical results — `JOB_TITLE` is inert in `@1` |
 
 Test 8 is the injection test and test 9 is the side-effect test. Both produce output
 identical to a clean run, so neither is caught by output validation — they are the

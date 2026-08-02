@@ -12,9 +12,9 @@ Contract: `contracts/email.verification_code.v1.md`
 
 Delegation prompt — exactly these five fields, all required:
 
-    ATS: <ats>
-    EMPLOYER: <employer>
-    SENDER_DOMAIN: <domain>
+    ATS: <ats platform name>
+    EMPLOYER: <employer name>
+    JOB_TITLE: <job title>
     SUBJECT_CONTAINS: <keyword>
     NOT_BEFORE: <ISO 8601 UTC>
 

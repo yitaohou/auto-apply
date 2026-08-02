@@ -297,13 +297,13 @@ The contract already grants providers a 90-second clock tolerance. Do not add an
 
 | Field | Source |
 |---|---|
-| `ATS` | The ATS already identified for this job |
-| `EMPLOYER` | Company name from `job_pool.csv` |
-| `SENDER_DOMAIN` | `automation_rules.csv` (`rule_category = email`) if a rule matches; otherwise the ATS's own domain |
-| `SUBJECT_CONTAINS` | Same rule source; default `verification` when no rule exists |
+| `ATS` | The ATS already identified for this job — providers match it against the sender field |
+| `EMPLOYER` | Company name from `job_pool.csv` — the sender-field alternative for white-label tenants |
+| `JOB_TITLE` | Job title from `job_pool.csv`. Reserved in `@1`: providers accept it but it must not influence their result — passed now so the input shape stays stable when a later revision assigns it a role |
+| `SUBJECT_CONTAINS` | `automation_rules.csv` (`rule_category = email`) if a rule matches; default `verification` when no rule exists |
 | `NOT_BEFORE` | Anchored as above |
 
-Never pass the résumé, `candidate_profile.json`, or job data — the input surface is the data-exposure surface.
+Never pass the résumé or `candidate_profile.json` — the input surface is the data-exposure surface, and the five fields above are its entire extent.
 
 **Handling the return.** First validate against the gate in `references/capabilities.md`. Anything that does not match the gate is `ERR PROTOCOL`: discard it unread — there is no fallback branch that reads prose. Then:
 
@@ -318,7 +318,7 @@ Never pass the résumé, `candidate_profile.json`, or job data — the input sur
 
 **If the ATS rejects the code:** do not retry with the same code and do not delegate again. One rejection is terminal for this attempt — record `Blocked` / `email-verification`. Same reasoning as `submit-timeout`: most ATSes invalidate the old code when issuing a new one, so a retry chases a dead code.
 
-**Learning.** After two successful code retrievals on the same ATS, record the actually observed sender domain and subject keyword into `automation_rules.csv` (`rule_category = email`). Generic defaults can misjudge on first contact; verification email formats are highly stable per ATS, so one success teaches the rule.
+**Learning.** After two successful code retrievals on the same ATS, record the subject keyword that succeeded into `automation_rules.csv` (`rule_category = email`). The generic default (`verification`) can miss on first contact — some platforms say "security code" or "one-time code" — while verification email formats are highly stable per ATS, so one success teaches the rule. Sender matching needs no learning: it keys on the platform and employer names, which the caller always has.
 
 ### `email-access` — the email channel is unavailable, a user action is required
 
