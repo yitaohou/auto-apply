@@ -1,0 +1,6 @@
+{
+  "name": "auto-apply",
+  "description": "Semi-automated ATS job application workflow with pluggable capability providers.",
+  "version": "0.1.0",
+  "author": { "name": "yitaohou" }
+}
