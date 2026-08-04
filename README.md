@@ -14,9 +14,18 @@ separately installed [providers](PROVIDERS.md); this core ships none.
 
 ## Install
 
-1. Install this plugin (point Claude Code at this repository, or install from a
-   marketplace that lists it)
+1. Add this repository as a plugin marketplace and install the plugin:
+
+       claude plugin marketplace add yitaohou/auto-apply
+       claude plugin install auto-apply@auto-apply
+
+   (or do the same through the interactive `/plugin` UI in a session; to try a
+   local clone instead, point `marketplace add` at its path)
 2. Restart the session — plugins load at startup
+
+Providers are not installed this way. Once the core is running, ask the agent to
+*register providers* — it presents the options, and installs your pick only after
+your confirmation (see First-time setup, step 3).
 
 ## First-time setup
 
