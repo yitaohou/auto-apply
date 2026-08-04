@@ -11,8 +11,15 @@ Claude Code 上的半自动 ATS 求职申请工作流,由 ego-browser(ego lite)�
 
 ## 安装
 
-1. 安装本 plugin(把 Claude Code 指向本仓库,或从收录它的 marketplace 安装)
+1. 把本仓库添加为 plugin marketplace,然后安装:
+
+       claude plugin marketplace add yitaohou/auto-apply
+       claude plugin install auto-apply@auto-apply
+
+   (也可以在会话里用交互式的 `/plugin` 界面完成同样的事;想试本地克隆的话,把 `marketplace add` 指向其路径即可)
 2. 重启会话——plugin 在启动时加载
+
+provider 不通过这种方式安装。core 跑起来之后,对 agent 说*注册 provider*——它会列出选项,并且只在你确认之后才安装你选中的那个(见"首次配置"第 3 步)。
 
 ## 首次配置
 
