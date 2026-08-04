@@ -64,7 +64,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 - Before writing any browser script: `references/browser-recipes.md` — the heredoc skeleton, scripting principles, and reusable recipes (address loop, upload verification, custom dropdowns, submit endings).
 - Before delegating any capability to a provider: `references/capabilities.md` — the delegation prompt templates, return gates, and error codes. Providers are resolved by name through `data/providers.csv`, never hardcoded.
 - Before binding a provider or touching `providers.csv` / `settings.csv` in any way: `references/register.md` — the registration flow, the only context in which the agent writes either file.
-- User-facing instructions live in `USAGE.md`.
+- User-facing instructions live in the repository root `README.md`.
 
 ---
 
