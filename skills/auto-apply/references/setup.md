@@ -48,6 +48,13 @@ hand has, at minimum, a name or an email in it; they are correctly left alone.)
 3. **Confirm section by section.** Present each section's drafted values as quotes
    from the resume — "the resume says X, correct?" — in small batches. Confirmed →
    written; corrected → the user's version is written; uncertain → left empty.
+
+   **Phone numbers: always store with an explicit country code, defaulting to
+   `+1`.** If the resume's number has no code, draft it as `+1XXXXXXXXXX` and
+   confirm like any other value; use a different code only when the number or the
+   user says otherwise. A code-less phone causes trouble downstream — many ATS
+   forms split the country code into its own selector, and the filler then has
+   nothing to select by.
 4. **Ask what the resume cannot know.** Work authorization / visa (wording traps
    matter — ask precisely), salary range, available start date and notice period,
    location and relocation stance. Declined answers go to `never_guess`.
