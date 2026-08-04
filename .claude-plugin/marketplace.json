@@ -1,0 +1,14 @@
+{
+  "name": "auto-apply",
+  "owner": { "name": "yitaohou" },
+  "metadata": {
+    "description": "Semi-automated ATS job application workflow for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "auto-apply",
+      "source": "./",
+      "description": "Semi-automated ATS job application workflow with pluggable capability providers."
+    }
+  ]
+}
