@@ -27,8 +27,15 @@ profile from it, and every value is confirmed by the user before it is written.
 ## When to run
 
 - The user asks to set up (or first use of the skill).
-- Pre-run reads find `candidate_profile.json` missing or still empty → **offer**
-  the interview; do not enter it uninvited, and do not enter it mid-run.
+- Pre-run reads find `candidate_profile.json` missing or still **unfilled** →
+  **offer** the interview; do not enter it uninvited, and do not enter it mid-run.
+
+**Unfilled means the key identity fields are empty strings** — check
+`candidate.legal_name` and `candidate.email`. The first run generates the file
+from the bundled template, so a fresh data directory contains a complete-looking
+JSON skeleton whose every value is `""`. Neither the file's existence nor its byte
+count ever counts as "set up" — only content does. (A user who filled the file by
+hand has, at minimum, a name or an email in it; they are correctly left alone.)
 
 ## The flow — in order
 
