@@ -1,3 +1,5 @@
+English | [简体中文](README.zh-CN.md)
+
 # auto-apply
 
 Semi-automated ATS job application workflow for Claude Code, driven by
