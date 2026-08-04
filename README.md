@@ -1,7 +1,7 @@
 # auto-apply
 
 Semi-automated ATS job application workflow for Claude Code, driven by
-[ego-browser](https://github.com/ego-browser). You supply a queue of job URLs; the
+ego-browser (ego lite). You supply a queue of job URLs; the
 agent opens each application, fills the form from your profile, and parks it at the
 submit button for your click (or submits and verifies, if you enable that). External
 capabilities — such as reading email verification codes — are fulfilled by
