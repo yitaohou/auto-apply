@@ -20,7 +20,7 @@ This system does NOT search for jobs, screen or rank jobs, or tailor resumes. It
 
 1. Never bypass CAPTCHA, hCaptcha, reCAPTCHA, Cloudflare, or any anti-bot check. Hand off to the user.
 2. Never guess work authorization, visa, salary, EEO, or anything on the profile's `never_guess` list. Ask instead.
-3. When `auto_submit=off`, never click final submit. Only the user edits `settings.csv`.
+3. When `auto_submit=off`, never click final submit. `settings.csv` changes only by the user's explicit decision — the agent may write only capability configuration keys (`email_access`, `email_address`) during provider registration (`references/register.md`), and never `auto_submit`.
 4. Never submit without verifying the resume is actually attached.
 5. Never treat "submit was clicked" as "application submitted".
 6. Never invent new `blocker_category` values — use `unknown` and let the user extend the enum.
@@ -32,8 +32,8 @@ Read these six BEFORE every run — skipping them causes duplicate applications 
 
 | File | Purpose |
 |---|---|
-| `data/settings.csv` | `auto_submit` (on/off), `batch_size`, `email_access` (off/read_only), `email_address`. User-edited only |
-| `data/providers.csv` | Capability → provider agent bindings (see `references/capabilities.md`). User-edited only |
+| `data/settings.csv` | `auto_submit` (on/off), `batch_size`, `email_access` (off/read_only), `email_address`. Every value is the user's decision; agent-writable only during provider registration, capability keys only (`references/register.md`) |
+| `data/providers.csv` | Capability → provider agent bindings (see `references/capabilities.md`). Written only during provider registration after an explicit user selection; read-only otherwise |
 | `data/job_pool.csv` | Single source of truth for each job's current status; one row per job — dedupe against it |
 | `data/automation_rules.csv` | Accumulated site rules: per-ATS confirmation criteria, accepted address formats, email verification patterns |
 | `data/blocker_queue.csv` | Retryable failures from earlier runs |
@@ -53,7 +53,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 
 ## Run Loop
 
-1. Read the six pre-run files. If `email_access = read_only`, record the Sent-folder tripwire baseline into `data/.tripwire.json` (recipe in `references/browser-recipes.md`). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
+1. Read the six pre-run files. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. If `email_access = read_only`, record the Sent-folder tripwire baseline into `data/.tripwire.json` (recipe in `references/browser-recipes.md`). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
 2. Add new `queue.txt` URLs to `job_pool.csv` as `Pending`; skip URLs already present.
 3. Process jobs one at a time. With `auto_submit=off`, park `batch_size` forms, hand the Space to the user to click, verify each tab afterward, then continue with the next batch. With `on`, process continuously.
 4. After the run: if a tripwire baseline was recorded, re-read the Sent folder and compare against `data/.tripwire.json` — any change means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, and treat the run as compromised. Then update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
@@ -63,6 +63,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 - Before operating any application page: `references/application-playbook.md` — state machine details, strict confirmation rule, the automation ladder, and the handling procedure for each of the 16 blocker categories.
 - Before writing any browser script: `references/browser-recipes.md` — the heredoc skeleton, scripting principles, and reusable recipes (address loop, upload verification, custom dropdowns, submit endings).
 - Before delegating any capability to a provider: `references/capabilities.md` — the delegation prompt templates, return gates, and error codes. Providers are resolved by name through `data/providers.csv`, never hardcoded.
+- Before binding a provider or touching `providers.csv` / `settings.csv` in any way: `references/register.md` — the registration flow, the only context in which the agent writes either file.
 - User-facing instructions live in `USAGE.md`.
 
 ---

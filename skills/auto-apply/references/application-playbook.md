@@ -140,8 +140,8 @@ Legal values (16). Do NOT invent new values; use `unknown` for anything unclassi
 | `sensitive-question` | Visa/salary/EEO wording doesn't match the profile; cannot auto-fill |
 | `permission` | Browser or file-access permission failure |
 | `overlay` | Extension overlay or popup covers a button |
-| `email-verification` | Emailed verification code: email never arrived, code rejected by the ATS, multiple matches undecidable, or a delegation precondition unmet |
-| `email-access` | Mailbox itself unreachable: not logged in, mail-account 2FA challenge, provider protocol violation, or masked address mismatch |
+| `email-verification` | The verification attempt itself failed — retry later or give up on this job: email never arrived, code rejected by the ATS, multiple matches undecidable, or this job already failed a code attempt |
+| `email-access` | The email channel is unavailable and only a user action fixes it: `email_access` off, `email_address` missing, no provider bound, mailbox not logged in, mail-account 2FA challenge, provider protocol violation, masked address mismatch, or a tripwire hit |
 | `unknown-ats` | Not one of the eleven target ATSes |
 | `unknown` | Unclassifiable — `what_happened` MUST describe the symptom |
 
@@ -275,14 +275,16 @@ If a masked hint does not match the address in `settings.csv`, record `Blocked` 
 
 This situation appears in two places, which share this same detection and delegation flow: a mailbox second factor at login, and mid-application verification (common on Workday / Oracle — a half-filled form is open, so the browser-state discipline in `browser-recipes.md` matters most there).
 
-**Preconditions.** All must hold, or record `Blocked` / `email-verification` and do not delegate:
+**Preconditions.** Check before delegating; any failure means do not delegate:
 
-- `settings.csv` → `email_access = read_only`
-- `settings.csv` → `email_address` is non-empty
-- `data/providers.csv` has exactly one `enabled = on` row for `email.verification_code@1`
-- This job has not already failed a verification-code attempt — one failure is terminal for the job
+- `settings.csv` → `email_access = read_only` — else `Blocked` / `email-access`
+- `settings.csv` → `email_address` is non-empty — else `Blocked` / `email-access`
+- `data/providers.csv` has exactly one `enabled = on` row for `email.verification_code@1` — else `Blocked` / `email-access`
+- This job has not already failed a verification-code attempt — else `Blocked` / `email-verification`; one failure is terminal for the job
 
-If no provider is bound (or the bound agent is unavailable), set `user_action_needed` to: `No provider bound for email.verification_code@1. See PROVIDERS.md for available providers, install one, then add a row to data/providers.csv.` Never skip silently and never fall back to a built-in implementation — the core ships none, deliberately.
+The category follows the remedy, not the flow stage: the first three are configuration gaps that no amount of retrying fixes — only a user action does, which is exactly what `email-access` signals. The fourth records that the verification itself already failed.
+
+If no provider is bound (or the bound agent is unavailable), set `user_action_needed` to: `No provider bound for email.verification_code@1. Run provider registration (references/register.md), or see PROVIDERS.md and add a row to data/providers.csv yourself.` Never skip silently, never fall back to a built-in implementation — the core ships none, deliberately — and never enter registration mid-run: record the blocker and move on.
 
 **Anchoring NOT_BEFORE.** Capture the local timestamp immediately *before* the action
 that causes the code to be sent — the click on "Send code" / "Continue" / "Verify", or,
@@ -295,13 +297,15 @@ The contract already grants providers a 90-second clock tolerance. Do not add an
 
 | Field | Source |
 |---|---|
-| `ATS` | The ATS already identified for this job |
-| `EMPLOYER` | Company name from `job_pool.csv` |
-| `SENDER_DOMAIN` | `automation_rules.csv` (`rule_category = email`) if a rule matches; otherwise the ATS's own domain |
-| `SUBJECT_CONTAINS` | Same rule source; default `verification` when no rule exists |
+| `ATS` | The ATS already identified for this job — providers match it against the sender field |
+| `EMPLOYER` | Company name from `job_pool.csv` — the sender-field alternative for white-label tenants |
+| `JOB_TITLE` | Job title from `job_pool.csv`. Reserved in `@1`: providers accept it but it must not influence their result — passed now so the input shape stays stable when a later revision assigns it a role |
+| `SUBJECT_CONTAINS` | `automation_rules.csv` (`rule_category = email`) if a rule matches; default `verification` when no rule exists |
 | `NOT_BEFORE` | Anchored as above |
 
-Never pass the résumé, `candidate_profile.json`, or job data — the input surface is the data-exposure surface.
+Never pass the résumé or `candidate_profile.json` — the input surface is the data-exposure surface, and the five fields above are its entire extent.
+
+Expect the delegation to take up to about three minutes: the contract requires providers to keep observing the mailbox until `NOT_BEFORE` + 180 seconds before concluding `NOT_FOUND` or `STALE_ONLY`. Do not treat a long-running delegation as a failure and do not delegate a second time in parallel.
 
 **Handling the return.** First validate against the gate in `references/capabilities.md`. Anything that does not match the gate is `ERR PROTOCOL`: discard it unread — there is no fallback branch that reads prose. Then:
 
@@ -311,18 +315,18 @@ Never pass the résumé, `candidate_profile.json`, or job data — the input sur
 | `ERR NOT_FOUND` | `Blocked` / `email-verification` / `can_retry = yes` |
 | `ERR STALE_ONLY` | Same. Repeated `STALE_ONLY` results mean the `NOT_BEFORE` anchor is probably being captured too late — check the anchor before suspecting the provider |
 | `ERR AMBIGUOUS` | Same as `NOT_FOUND` |
-| `ERR MAILBOX_UNREACHABLE` | `Blocked` / `email-access` / `user_action_needed` = `log into the mail account in ego lite` |
+| `ERR MAILBOX_UNREACHABLE` | `Blocked` / `email-access` / `user_action_needed` = `restore the provider's mailbox access — its README states how` |
 | `ERR PROTOCOL` | `Blocked` / `email-access`; record the first 100 characters of the raw return in `what_happened` for diagnosis |
 
 **If the ATS rejects the code:** do not retry with the same code and do not delegate again. One rejection is terminal for this attempt — record `Blocked` / `email-verification`. Same reasoning as `submit-timeout`: most ATSes invalidate the old code when issuing a new one, so a retry chases a dead code.
 
-**Learning.** After two successful code retrievals on the same ATS, record the actually observed sender domain and subject keyword into `automation_rules.csv` (`rule_category = email`). Generic defaults can misjudge on first contact; verification email formats are highly stable per ATS, so one success teaches the rule.
+**Learning.** After two successful code retrievals on the same ATS, record the subject keyword that succeeded into `automation_rules.csv` (`rule_category = email`). The generic default (`verification`) can miss on first contact — some platforms say "security code" or "one-time code" — while verification email formats are highly stable per ATS, so one success teaches the rule. Sender matching needs no learning: it keys on the platform and employer names, which the caller always has.
 
-### `email-access` — the mailbox itself is unreachable
+### `email-access` — the email channel is unavailable, a user action is required
 
-Covers: mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
+Covers: `email_access = off`, `email_address` missing, no provider bound (or the bound agent unavailable), mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
 
-- These are not retryable by waiting — a user action is required. Record `Blocked` with a precise `user_action_needed` (e.g. `log into the mail account in ego lite`).
+- These are not retryable by waiting — a user action is required. Record `Blocked` with a precise `user_action_needed` (e.g. restoring the provider's mailbox access the way its README describes).
 - Keep `email-access` distinct from `email-verification`: the remedies are opposite. `email-verification` means "try again later"; `email-access` means "the user must go fix mailbox access". Never merge them.
 - If the Sent-folder tripwire fires (see `browser-recipes.md`), abort the entire run immediately, record `email-access`, and alert the user loudly. A tripwire hit is not a test failure — it means a message left the mailbox during a run.
 

@@ -84,7 +84,8 @@ implementation notes.
 |---|---|---|
 | Read the value from a list preview instead of opening the item | No | Implementation |
 | Clock tolerance of 90 seconds | Yes — same input, different result | **Contract** |
-| Retry twice with a 10-second gap | No — only latency changes | Implementation |
+| Polling cadence inside a required observation window | No — only latency changes | Implementation |
+| Minimum observation window before concluding "not found" | Yes — the world changes while you wait | **Contract** |
 | Never trigger a "resend" action | Yes — affects the *next* call | **Contract** |
 
 Note the last row. A side effect is observable even when this call's output is
