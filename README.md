@@ -31,11 +31,13 @@ your confirmation (see First-time setup, step 3).
 
 ## First-time setup
 
-1. **Data directory.** The first run creates `~/job-search/` from the bundled
-   templates. Fill in:
-   - `candidate_profile.json` — your facts (never guessed, only quoted)
-   - `answer_bank.md` — the wording typed into forms
-   - `data/resume_rules.csv` — which resume variant for which role family
+1. **Profile — just say "set up".** The agent runs a setup interview: it opens the
+   resumes folder in Finder for you to drop your resume in, drafts your profile
+   from the resume, and **confirms every value with you before writing anything**
+   — sensitive facts (visa, salary, notice) are always asked directly, never
+   inferred. The interview fills `candidate_profile.json`, `answer_bank.md`, and
+   `data/resume_rules.csv` under `~/job-search/`; you can also edit those files by
+   hand at any time.
 2. **Settings.** `data/settings.csv` defaults to `auto_submit=off` (the agent never
    clicks final submit) and `batch_size=10`. Only change values yourself — the agent
    won't.
