@@ -39,7 +39,7 @@ Read these six BEFORE every run — skipping them causes duplicate applications 
 | `data/blocker_queue.csv` | Retryable failures from earlier runs |
 | `queue.txt` | Input: job URLs, one per line |
 
-`data/.tripwire.json` holds the Sent-folder tripwire baseline (see Run Loop steps 1 and 4). The agent writes it at run start and compares at run end; it stores only a message's sent time and subject, never any code or credential.
+`data/.tripwire.json` holds the Sent-folder tripwire marker (see Run Loop steps 1 and 4) — an opaque digest obtained from the `email.sent_marker@1` provider at run start and compared at run end. It contains no message text, no code, no credential.
 
 Read when needed: `candidate_profile.json` and `answer_bank.md` before filling any form; `data/resume_rules.csv` when choosing a resume; `data/application_log.csv` and `data/follow_up.csv` for history.
 
@@ -53,10 +53,10 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 
 ## Run Loop
 
-1. Read the six pre-run files. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. If `email_access = read_only`, record the Sent-folder tripwire baseline into `data/.tripwire.json` (recipe in `references/browser-recipes.md`). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
+1. Read the six pre-run files. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. If `email_access = read_only`, obtain the Sent-folder tripwire marker via the `email.sent_marker@1` provider and store it in `data/.tripwire.json` (recipe in `references/browser-recipes.md`); if that capability is unbound or unreachable, warn the user loudly that the tripwire cannot run. Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
 2. Add new `queue.txt` URLs to `job_pool.csv` as `Pending`; skip URLs already present.
 3. Process jobs one at a time. With `auto_submit=off`, park `batch_size` forms, hand the Space to the user to click, verify each tab afterward, then continue with the next batch. With `on`, process continuously.
-4. After the run: if a tripwire baseline was recorded, re-read the Sent folder and compare against `data/.tripwire.json` — any change means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, and treat the run as compromised. Then update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
+4. After the run: if a tripwire marker was recorded, request a fresh marker from the `email.sent_marker@1` provider and compare against `data/.tripwire.json` — any difference means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, and treat the run as compromised. Then update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
 
 ## References — read before acting
 
