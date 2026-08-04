@@ -53,7 +53,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 
 ## Run Loop
 
-1. Read the six pre-run files. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. If `email_access = read_only`, record the Sent-folder tripwire baseline into `data/.tripwire.json` (recipe in `references/browser-recipes.md`). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
+1. Read the six pre-run files. If `candidate_profile.json` is missing or still empty, offer the first-run setup interview (`references/setup.md`) before anything else. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. If `email_access = read_only`, record the Sent-folder tripwire baseline into `data/.tripwire.json` (recipe in `references/browser-recipes.md`). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
 2. Add new `queue.txt` URLs to `job_pool.csv` as `Pending`; skip URLs already present.
 3. Process jobs one at a time. With `auto_submit=off`, park `batch_size` forms, hand the Space to the user to click, verify each tab afterward, then continue with the next batch. With `on`, process continuously.
 4. After the run: if a tripwire baseline was recorded, re-read the Sent folder and compare against `data/.tripwire.json` — any change means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, and treat the run as compromised. Then update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
@@ -64,6 +64,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 - Before writing any browser script: `references/browser-recipes.md` — the heredoc skeleton, scripting principles, and reusable recipes (address loop, upload verification, custom dropdowns, submit endings).
 - Before delegating any capability to a provider: `references/capabilities.md` — the delegation prompt templates, return gates, and error codes. Providers are resolved by name through `data/providers.csv`, never hardcoded.
 - Before binding a provider or touching `providers.csv` / `settings.csv` in any way: `references/register.md` — the registration flow, the only context in which the agent writes either file.
+- When the data directory is fresh: `references/setup.md` — the first-run interview: resume upload first, profile drafted from it, every value user-confirmed before writing.
 - User-facing instructions live in the repository root `README.md`.
 
 ---
