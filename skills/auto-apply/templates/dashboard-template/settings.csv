@@ -1,2 +1,2 @@
-auto_submit,batch_size,email_access,email_address
-off,10,off,
+auto_submit,batch_size,email_access,email_address,search_mode
+off,10,off,,search_then_apply

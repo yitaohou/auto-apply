@@ -62,6 +62,18 @@ are the entire justification for the agent touching them at all:
      `email_access = off`, and move on. The off row records the decision so the
      next registration does not re-ask; the playbook's precondition gate accepts
      only `enabled = on`, so no delegation can happen.
+
+   For `job.search@1`, the configuration step asks one question and writes one
+   settings key:
+
+       search_mode — when should applying start?
+         search_then_apply    (default) wait until the search finishes, then work the queue
+         search_while_applying  start applying as soon as the first results appear
+
+   Explain the trade-off plainly: the second option starts sooner but reads a file
+   the provider is still writing, which makes failures harder to diagnose. Write the
+   chosen value to `data/settings.csv` → `search_mode`, echoed back verbatim, exactly
+   as with the email capability's keys.
 4. **Bind.** Append (or update) the `providers.csv` row — after install and
    configuration succeeded, never before — and echo the exact row back to the user.
    One capability may have at most one `enabled = on` row.
