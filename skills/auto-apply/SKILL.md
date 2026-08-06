@@ -1,13 +1,13 @@
 ---
 name: auto-apply
-description: "Automated job application pipeline driven by ego-browser. Use when the user wants to apply to jobs from a queue of URLs: filling ATS application forms (Greenhouse, Lever, Ashby, Workday, Oracle, Dayforce, LinkedIn Easy Apply, and others), parking forms at the submit button or auto-submitting them, verifying submission confirmations, triaging blockers, updating the job-search dashboard CSVs, or reporting a run summary. Trigger phrases include: run the queue, apply to these jobs, process queue.txt, check parked tabs, application status report."
+description: "Automated job application pipeline driven by ego-browser. Use when the user wants to apply to jobs from a queue of URLs: filling ATS application forms (Greenhouse, Lever, Ashby, Workday, Oracle, Dayforce, LinkedIn Easy Apply, and others), parking forms at the submit button or auto-submitting them, verifying submission confirmations, triaging blockers, updating the job-search dashboard CSVs, searching for new postings through a bound job.search provider, or reporting a run summary. Trigger phrases include: run the queue, apply to these jobs, process queue.txt, check parked tabs, application status report, search for jobs."
 ---
 
 # AutoApply
 
 AutoApply turns a list of job URLs into completed applications. The user supplies URLs in `~/job-search/queue.txt`; the agent opens each application in ego-browser, fills the form from the candidate profile, and either parks it at the final submit button for the user to click (`auto_submit=off`) or submits and verifies confirmation (`auto_submit=on`).
 
-This system does NOT search for jobs, screen or rank jobs, or tailor resumes. It consumes URLs from `queue.txt` and executes applications. Resume selection is a lookup in `resume_rules.csv`, nothing more.
+Search is provided by a provider bound to `job.search@1` (`references/search.md`); the core itself still does not search — it now has a way to ask something else to, and `queue.txt` remains the only entry point. This system does NOT screen or rank jobs, or tailor resumes. Resume selection is a lookup in `resume_rules.csv`, nothing more.
 
 ## Core Contract
 
@@ -41,7 +41,7 @@ Read these six BEFORE every run — skipping them causes duplicate applications 
 
 `data/.tripwire.json` holds the Sent-folder tripwire baseline (see Run Loop steps 1 and 4). The agent writes it at run start and compares at run end; it stores only a message's sent time and subject, never any code or credential.
 
-Read when needed: `candidate_profile.json` and `answer_bank.md` before filling any form; `data/resume_rules.csv` when choosing a resume; `data/application_log.csv` and `data/follow_up.csv` for history.
+Read when needed: `candidate_profile.json` and `answer_bank.md` before filling any form; `data/resume_rules.csv` when choosing a resume; `data/application_log.csv` and `data/follow_up.csv` for history; `data/search_profile.csv` when the user asks for a job search — user-edited only, like `settings.csv` and `providers.csv`, and never derived from `candidate_profile.json`.
 
 Write as you go: every attempt (including failures) appends to `application_log.csv`; status changes update `job_pool.csv`; obstacles append to `blocker_queue.csv`; each run's totals accumulate into `data/daily_dashboard.csv` (one row per day — add to today's row, never create a second).
 
@@ -63,6 +63,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 - Before operating any application page: `references/application-playbook.md` — state machine details, strict confirmation rule, the automation ladder, and the handling procedure for each of the 16 blocker categories.
 - Before writing any browser script: `references/browser-recipes.md` — the heredoc skeleton, scripting principles, and reusable recipes (address loop, upload verification, custom dropdowns, submit endings).
 - Before delegating any capability to a provider: `references/capabilities.md` — the delegation prompt templates, return gates, and error codes. Providers are resolved by name through `data/providers.csv`, never hardcoded.
+- Before running any job search: `references/search.md` — the trigger rule, the batch loop with its hard ingest-before-next-batch ordering, stop conditions, and search failure handling (no blockers).
 - Before binding a provider or touching `providers.csv` / `settings.csv` in any way: `references/register.md` — the registration flow, the only context in which the agent writes either file.
 - When the data directory is fresh: `references/setup.md` — the first-run interview: resume upload first, profile drafted from it, every value user-confirmed before writing.
 - User-facing instructions live in the repository root `README.md`.

@@ -46,3 +46,13 @@ Manual alternative:
 
 Not satisfied with what's listed? Write your own against the contract and bind it the
 same way. Nothing in the core changes.
+
+---
+
+## job.search@1
+
+Contract: `contracts/job.search.v1.md`
+
+| Provider | Repository | Coverage | Stack | Maintainer | Status |
+|---|---|---|---|---|---|
+| _(none yet)_ | | | | | |

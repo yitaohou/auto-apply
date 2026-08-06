@@ -7,6 +7,15 @@ A capability is a unit of work the core delegates to an external provider. The c
 declares that it needs a capability; it never names a provider. Providers are bound by
 the user in `data/providers.csv`.
 
+One invariant applies to every capability, present and future:
+
+> **Providers are leaves.** A provider never calls another provider, never calls back
+> into the core, and never initiates work on its own. The core is the sole orchestrator.
+
+This settles a recurring question — "this capability looks like it comes first in the
+data flow; should it drive the process?" No. Control follows state, not data flow: the
+core owns the job pool and its invariants, so the core is always the caller.
+
 ---
 
 ## 1. Identifier and versioning
