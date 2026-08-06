@@ -37,7 +37,7 @@ Read these six BEFORE every run — skipping them causes duplicate applications 
 | `data/job_pool.csv` | Single source of truth for each job's current status; one row per job — dedupe against it |
 | `data/automation_rules.csv` | Accumulated site rules: per-ATS confirmation criteria, accepted address formats, email verification patterns |
 | `data/blocker_queue.csv` | Retryable failures from earlier runs |
-| `queue.txt` | Input: job URLs, one per line |
+| `queue.txt` | Input: one job per line — a bare URL, or a JSON object with search metadata. Append-only; a search provider may be appending to it concurrently (`references/search.md`) |
 
 `data/.tripwire.json` holds the Sent-folder tripwire baseline (see Run Loop steps 1 and 4). The agent writes it at run start and compares at run end; it stores only a message's sent time and subject, never any code or credential.
 
@@ -54,7 +54,12 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 ## Run Loop
 
 1. Read the six pre-run files. If `candidate_profile.json` is missing or still unfilled — `candidate.legal_name` and `candidate.email` are empty strings — offer the first-run setup interview (`references/setup.md`) before anything else. The first run generates the file from the template, so a complete-looking JSON skeleton full of empty strings is the NOT-set-up state; file existence never counts as set up. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. If `email_access = read_only`, record the Sent-folder tripwire baseline into `data/.tripwire.json` (recipe in `references/browser-recipes.md`). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
-2. Add new `queue.txt` URLs to `job_pool.csv` as `Pending`; skip URLs already present.
+2. Add new `queue.txt` entries to `job_pool.csv` as `Pending`; skip URLs already
+   present. A line starting with `http` is a bare URL; a line starting with `{` is a
+   JSON object whose fields populate `job_title`, `company`, `location`, `level`,
+   `posted_date`, and `ats` (`references/search.md`). Skip a trailing line with no
+   newline — it is still being written. Malformed lines are reported to the user and
+   skipped, never guessed at.
 3. Process jobs one at a time. With `auto_submit=off`, park `batch_size` forms, hand the Space to the user to click, verify each tab afterward, then continue with the next batch. With `on`, process continuously.
 4. After the run: if a tripwire baseline was recorded, re-read the Sent folder and compare against `data/.tripwire.json` — any change means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, and treat the run as compromised. Then update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
 
@@ -63,7 +68,9 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 - Before operating any application page: `references/application-playbook.md` — state machine details, strict confirmation rule, the automation ladder, and the handling procedure for each of the 16 blocker categories.
 - Before writing any browser script: `references/browser-recipes.md` — the heredoc skeleton, scripting principles, and reusable recipes (address loop, upload verification, custom dropdowns, submit endings).
 - Before delegating any capability to a provider: `references/capabilities.md` — the delegation prompt templates, return gates, and error codes. Providers are resolved by name through `data/providers.csv`, never hardcoded.
-- Before running any job search: `references/search.md` — the trigger rule, the batch loop with its hard ingest-before-next-batch ordering, stop conditions, and search failure handling (no blockers).
+- Before searching for jobs, and only when the user asks: `references/search.md` — the
+  search flow, the append-only queue discipline, and the `queue.txt` line formats. The
+  core never searches uninvited.
 - Before binding a provider or touching `providers.csv` / `settings.csv` in any way: `references/register.md` — the registration flow, the only context in which the agent writes either file.
 - When the data directory is fresh: `references/setup.md` — the first-run interview: resume upload first, profile drafted from it, every value user-confirmed before writing.
 - User-facing instructions live in the repository root `README.md`.

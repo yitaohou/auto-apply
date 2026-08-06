@@ -34,30 +34,31 @@ NOT_FOUND or STALE_ONLY. A long-running delegation is not a failure.
 ## job.search@1
 
 Contract: `contracts/job.search.v1.md`
+Flow: `references/search.md`
 
-Delegation prompt — exactly these six fields:
+This provider appends results to `queue.txt` as it works and returns a summary. It does
+not return the jobs themselves.
+
+Delegation prompt — exactly these six fields, all required:
 
     KEYWORDS: <comma-separated titles or keywords>
     LOCATIONS: <comma-separated locations>
     REMOTE: onsite | hybrid | remote | any
     POSTED_WITHIN: <integer days>
     REQUIREMENTS: <free-form requirement set, passed through verbatim>
-    MAX_RESULTS: <integer, 1..300>
+    MAX_RESULTS: <integer, how many jobs to append at most>
 
-Return gate — a JSON object:
+Return gate — a single line:
 
-    {"results": [...], "exhausted": <bool>}
+    ^OK APPENDED [0-9]+ (EXHAUSTED|MORE_AVAILABLE)$|^ERR [A-Z_]+$
 
-Each result object has exactly these keys:
+Anything not matching is discarded as ERR PROTOCOL. Do not parse it, do not read it.
+There is no fallback branch that reads prose.
 
-    url, title, company, location, level, posted_date, ats
+Error codes: NO_RESULTS | SOURCE_UNAVAILABLE | RATE_LIMITED | INVALID_INPUT
 
-Discard the entire response if it is not parseable JSON, if any result object has
-missing or extra keys, or if `results` is longer than MAX_RESULTS. Treat as
-ERR PROTOCOL. There is no partial acceptance and no fallback branch that reads prose.
+EXHAUSTED is not an error. It means no further unseen postings exist under these
+criteria.
 
-Error codes: NO_RESULTS | SOURCE_UNAVAILABLE | RATE_LIMITED | INVALID_INPUT —
-returned as a bare single line matching `^ERR [A-Z_]+$` instead of the JSON object.
-
-`exhausted: true` means the provider found no further unseen postings under these
-criteria. It is not an error.
+The appended count is the provider's own claim. Verify it against the lines actually
+added; a count exceeding MAX_RESULTS is a contract violation to report to the user.

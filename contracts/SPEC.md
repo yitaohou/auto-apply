@@ -16,6 +16,26 @@ This settles a recurring question — "this capability looks like it comes first
 data flow; should it drive the process?" No. Control follows state, not data flow: the
 core owns the job pool and its invariants, so the core is always the caller.
 
+A corollary: scheduling is not a capability. A provider that answers "is it time yet?"
+still needs something to ask it, and the core only runs when started. Real scheduling
+comes from outside the agent system — cron, or a scheduled task — which starts the
+core. Do not model it as a contract.
+
+### The append-queue exception
+
+A contract may grant a provider append access to exactly one core-owned input queue,
+when streaming results is the point of the capability and a return value cannot carry
+them in time. Such a contract must state all of the following:
+
+- The single file the provider may append to. No other file, read or write.
+- Append only — never rewrite, reorder, truncate, or delete an existing line.
+- One line written in a single operation, content and newline together, so a reader
+  never sees a partial line except possibly at the end of file.
+- A hard cap on how many lines one call may append.
+
+The provider still returns a value, still holds no state between calls, and still calls
+nothing. This is a narrowed write permission, not a promotion out of leaf status.
+
 ---
 
 ## 1. Identifier and versioning
