@@ -30,3 +30,34 @@ Error codes: NOT_FOUND | STALE_ONLY | AMBIGUOUS | MAILBOX_UNREACHABLE
 A call may legitimately run for up to ~3 minutes: the contract obliges providers to
 keep observing the mailbox until NOT_BEFORE + 180 seconds before they may conclude
 NOT_FOUND or STALE_ONLY. A long-running delegation is not a failure.
+
+## job.search@1
+
+Contract: `contracts/job.search.v1.md`
+
+Delegation prompt — exactly these six fields:
+
+    KEYWORDS: <comma-separated titles or keywords>
+    LOCATIONS: <comma-separated locations>
+    REMOTE: onsite | hybrid | remote | any
+    POSTED_WITHIN: <integer days>
+    REQUIREMENTS: <free-form requirement set, passed through verbatim>
+    MAX_RESULTS: <integer, 1..300>
+
+Return gate — a JSON object:
+
+    {"results": [...], "exhausted": <bool>}
+
+Each result object has exactly these keys:
+
+    url, title, company, location, level, posted_date, ats
+
+Discard the entire response if it is not parseable JSON, if any result object has
+missing or extra keys, or if `results` is longer than MAX_RESULTS. Treat as
+ERR PROTOCOL. There is no partial acceptance and no fallback branch that reads prose.
+
+Error codes: NO_RESULTS | SOURCE_UNAVAILABLE | RATE_LIMITED | INVALID_INPUT —
+returned as a bare single line matching `^ERR [A-Z_]+$` instead of the JSON object.
+
+`exhausted: true` means the provider found no further unseen postings under these
+criteria. It is not an error.
