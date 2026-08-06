@@ -30,6 +30,12 @@ unparsed — search semantics belong to the provider.
 `default_max_results` from `search_profile.csv`. There is no ceiling — a large number is
 the user's decision and their consequence.
 
+There is no contract ceiling, but browser-driven providers work through postings one at
+a time. Requests above roughly 150 postings run long enough that a single interruption
+loses the whole call, and may exhaust the provider's turn budget before it can report
+back. Relay this to the user when they ask for more, then honour whatever they choose —
+the number is theirs to decide.
+
 The provider appends to `queue.txt` and returns a one-line summary. See
 `references/capabilities.md` for the template and return gate.
 
@@ -59,13 +65,18 @@ Ingestion is Run Loop step 2 and is not duplicated here. Whichever mode is in us
 enter `job_pool.csv` through that one step, which owns the dedupe against existing
 `job_url` values.
 
+Queue lines carry five fields. `job_pool.csv` also has `posted_date` and `ats`, which
+providers do not supply: leave both empty at ingestion. They are filled later, when a
+job is opened for application and the real posting page and application form are in
+front of the agent — that is the first moment either fact is reliably observable.
+
 ## `queue.txt` line formats
 
 A line beginning with `http` is a bare URL — the original format, unchanged. A line
 beginning with `{` is a JSON object carrying search metadata:
 
     https://boards.greenhouse.io/acme/jobs/1234567
-    {"url":"https://job-boards.lever.co/beta/89ab","title":"Senior Fullstack Engineer","company":"Beta Inc","location":"Toronto, ON","level":"senior","posted_date":"2026-08-01","ats":"lever"}
+    {"url":"https://job-boards.lever.co/beta/89ab","title":"Senior Fullstack Engineer","company":"Beta Inc","location":"Toronto, ON","level":"senior"}
 
 Both forms coexist. Hand-pasted URLs keep working exactly as before, including while a
 provider is appending.
