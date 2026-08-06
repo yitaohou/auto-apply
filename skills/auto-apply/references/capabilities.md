@@ -44,7 +44,7 @@ Delegation prompt — exactly these six fields, all required:
     KEYWORDS: <comma-separated titles or keywords>
     LOCATIONS: <comma-separated locations>
     REMOTE: onsite | hybrid | remote | any
-    POSTED_WITHIN: <integer days>
+    POSTED_WITHIN_HOURS: <integer hours, rolling window from now>
     REQUIREMENTS: <free-form requirement set, passed through verbatim>
     MAX_RESULTS: <integer, how many jobs to append at most>
 
@@ -59,6 +59,10 @@ Error codes: NO_RESULTS | SOURCE_UNAVAILABLE | RATE_LIMITED | INVALID_INPUT
 
 EXHAUSTED is not an error. It means no further unseen postings exist under these
 criteria.
+
+Queue lines carry exactly five keys: url, title, company, location, level. Providers do
+not supply a posting date or an ATS name — those are established later, when a job is
+actually opened for application.
 
 The appended count is the provider's own claim. Verify it against the lines actually
 added; a count exceeding MAX_RESULTS is a contract violation to report to the user.

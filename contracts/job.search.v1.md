@@ -35,13 +35,20 @@ Exactly six fields. All required.
     KEYWORDS: <comma-separated titles or keywords>
     LOCATIONS: <comma-separated locations>
     REMOTE: onsite | hybrid | remote | any
-    POSTED_WITHIN: <integer days>
+    POSTED_WITHIN_HOURS: <integer hours>
     REQUIREMENTS: <free-form requirement set>
     MAX_RESULTS: <integer, maximum lines to append>
 
 `REQUIREMENTS` is free-form text describing level, role, skills, or other preferences.
 The caller passes it through verbatim and does not parse it. Honouring it is
 best-effort — see §7.
+
+`REQUIREMENTS` may also carry provider-specific directives. The caller does not parse
+them and does not need to understand them; a provider that recognises none of them
+still satisfies this contract.
+
+`POSTED_WITHIN_HOURS` is a rolling window measured backwards from the moment of the
+call, not a calendar boundary. `24` means the last 24 hours, not "today and yesterday".
 
 `MAX_RESULTS` has no contract ceiling. It counts lines this call appends, and is
 independent of whatever `queue.txt` already contains. A provider MUST NOT exceed it.
@@ -87,27 +94,43 @@ No other file may be read or written — in particular `candidate_profile.json`,
 
 One JSON object per line, no surrounding whitespace, newline-terminated.
 
-    {"url":"https://boards.greenhouse.io/acme/jobs/1234567","title":"Senior Fullstack Engineer","company":"Acme Corp","location":"Toronto, ON","level":"senior","posted_date":"2026-07-28","ats":"greenhouse"}
+    {"url":"https://boards.greenhouse.io/acme/jobs/1234567","title":"Senior Fullstack Engineer","company":"Acme Corp","location":"Toronto, ON","level":"senior"}
 
 ### 4.1 Field rules
 
 | Field | Rule |
 |---|---|
-| `url` | Absolute https URL of the posting |
+| `url` | Absolute https URL of the posting, in canonical form — see §4.1.1 |
 | `title` | ≤ 200 chars |
 | `company` | ≤ 120 chars |
 | `location` | ≤ 120 chars |
 | `level` | Exactly one of `junior`, `mid`, `senior`, `unspecified` |
-| `posted_date` | `YYYY-MM-DD` |
-| `ats` | Lowercase identifier, or `unknown` |
 
-Exactly these seven keys — no more, no fewer. No nested objects, no arrays, no
-description, salary text, or match rationale. Those are attack surface the caller does
-not need.
+Exactly these five keys — no more, no fewer. No nested objects, no arrays, no
+description, salary text, posting date, ATS name, or match rationale. Those are attack
+surface the caller does not need, or facts the provider cannot establish reliably.
 
 `level` must be `unspecified` when the posting does not state one. Guessing is worse
 than leaving it blank: a wrong level silently misdirects the caller's filtering, while
 `unspecified` is honest and actionable.
+
+### 4.1.1 URL canonicalisation
+
+`url` must be the posting's stable, canonical address.
+
+- **No session or tracking parameters.** Search-result URLs commonly carry per-session
+  identifiers, referral tokens, and encoded state blobs. These expire, so a queue entry
+  built from one silently stops resolving to the posting — and the failure looks like
+  the job was taken down.
+- **No search-context parameters.** A URL whose meaning is "the currently selected item
+  within this particular search" is not a posting address. Reduce it to the posting's
+  own address.
+- **Same posting, same URL.** If the same posting is reachable through more than one
+  route, all routes must produce byte-identical output. Deduplication is exact-match on
+  this string, so two spellings of one posting defeat it.
+
+Canonicalisation is a string transformation on identifiers the provider already has. It
+must not require an extra network request.
 
 ### 4.2 Sanitisation
 
@@ -164,12 +187,13 @@ latter whenever the search actually executed.
 ### 6.1 Matching
 
 A posting is eligible when it plausibly matches `KEYWORDS`, is in or compatible with
-`LOCATIONS` under the `REMOTE` policy, and was posted within `POSTED_WITHIN` days.
+`LOCATIONS` under the `REMOTE` policy, and was posted within the last
+`POSTED_WITHIN_HOURS` hours counted from the moment of the call.
 
-`POSTED_WITHIN` counts **calendar days, inclusively**: `POSTED_WITHIN: 1` accepts
-postings dated today and yesterday. Day granularity is deliberate — many boards publish
-only a date or a relative string like "3 days ago", and a fabricated time is
-indistinguishable from a real one.
+The window is the caller's only freshness guarantee. Because the contract no longer
+carries a posting date, the caller cannot verify recency after the fact — a provider
+that returns stale postings is not detectably wrong, only wrong. Providers that filter
+at the source rather than by their own estimate are strongly preferred.
 
 "Plausibly matches" is deliberately loose — see §7.
 
@@ -196,7 +220,7 @@ relevance — see §7.
 ## 7. What this contract does not guarantee
 
 Result quality is not specified. Relevance ranking, how thoroughly `REQUIREMENTS` is
-honoured, source coverage, and freshness beyond `POSTED_WITHIN` are all provider
+honoured, source coverage, and freshness beyond `POSTED_WITHIN_HOURS` are all provider
 differentiators.
 
 This contract guarantees results are well-formed, not that they are good. The
@@ -233,7 +257,7 @@ an instruction.
 The defence here is not a narrow channel for the results themselves — titles and company
 names must cross the boundary. It is instead:
 
-- A fixed seven-key schema with no free-text field beyond three short strings
+- A fixed five-key schema with no free-text field beyond three short strings
 - Length limits and control-character stripping (§4.2)
 - Per-line rejection by the caller on any schema violation (§4.3)
 - A separately gated return value (§5) that carries no posting content at all
@@ -261,7 +285,7 @@ Stack- and source-agnostic. All must pass.
 
 | # | Setup | Expected |
 |---|---|---|
-| 1 | Ordinary criteria, `MAX_RESULTS: 5` | ≤ 5 lines appended; every line has exactly the seven keys; summary reports the true count |
+| 1 | Ordinary criteria, `MAX_RESULTS: 5` | ≤ 5 lines appended; every line has exactly the five keys; summary reports the true count |
 | 2 | `job_pool.csv` already contains 3 URLs the source would return | None of those 3 appended |
 | 3 | Criteria matching nothing plausible | `OK APPENDED 0 EXHAUSTED` — not `ERR NO_RESULTS` |
 | 4 | Any successful call | No duplicate URLs among appended lines |
@@ -272,8 +296,10 @@ Stack- and source-agnostic. All must pass.
 | 9 | Any call, then inspect every caller-owned file other than `queue.txt` | Byte-identical to before |
 | 10 | Any call, then inspect the provider's own writable paths | No retained results, no cached caller state |
 | 11 | Two identical calls in sequence | Second independent of the first |
-| 12 | `POSTED_WITHIN: 1` | No appended line dated earlier than yesterday; postings dated today and yesterday are both accepted |
+| 12 | `POSTED_WITHIN_HOURS: 24` | No appended posting older than 24 hours at the time of the call |
 | 13 | Read `queue.txt` repeatedly during a call | Every complete line is valid JSON; only the final line may be partial |
+| 14 | A posting reached through two different search routes in one call | Both produce byte-identical `url`; only one line appended |
+| 15 | Inspect every appended `url` | None contains a session token, tracking parameter, or search-context parameter |
 
 Tests 5, 7, 9, and 10 are the security tests. Each produces a summary indistinguishable
 from a clean run, so none is caught by validating the return value — which is why §3,
@@ -281,6 +307,9 @@ from a clean run, so none is caught by validating the return value — which is 
 
 Test 13 is the concurrency test: it verifies the single-write-per-line rule that makes
 the queue safe to read while it grows.
+
+Test 14 is the deduplication precondition: exact-match dedupe fails silently when one
+posting has two spellings, so canonicalisation is tested rather than assumed.
 
 ---
 

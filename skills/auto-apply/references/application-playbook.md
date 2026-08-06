@@ -380,6 +380,14 @@ mandatory.
 
 1. Identify the ATS. Not on the eleven-ATS list → `Blocked`, `unknown-ats`.
 2. Open the application page. Login page → `Blocked`, `login`. Permission failure → `Blocked`, `permission`.
+
+   When the application page is open and the ATS is identified, fill in the two fields
+   ingestion left empty: `job_pool.ats` with the platform now visible, and
+   `job_pool.posted_date` with the posting date if the page states one. Leave
+   `posted_date` empty if it does not — never infer it from a relative phrase you did not
+   see. These two columns exist for debugging and for later analysis; they are recorded
+   once, when the facts are actually in front of you.
+
 3. Fill basic fields — semantic locating, ladder level 1.
 4. Custom dropdowns (guaranteed on Workday / Oracle / Dayforce): Escape → click real option text → keyboard nav → readback verify. Still failing → level 3. Then → `Blocked`, `dropdown`, `next_retry_strategy = visual control`.
 5. Address field: six-format bounded loop + the autocomplete iron rule. All rejected → `Blocked`, `address`. Success → record the accepted format per employer.
