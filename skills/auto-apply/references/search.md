@@ -98,6 +98,11 @@ redundant: providers are third-party code.
 The provider's summary reports how many jobs it appended and whether the pool is
 exhausted. Relay it plainly.
 
+The summary may carry a `BY_KEYWORD` breakdown of the appended count by the caller's
+own keywords (see the contract's §5). When present, relay it too — e.g. "software
+engineer 12, frontend engineer 3". A keyword listed with `0` was searched and yielded
+nothing new; a keyword missing from the breakdown was never searched this call.
+
 `EXHAUSTED` means no further unseen postings exist under these criteria — not an error,
 and not a reason to retry. Tell the user:
 
