@@ -157,6 +157,23 @@ A single line. No prose before or after it.
 
 `<n>` is the number of lines this call appended.
 
+Either OK form may carry an optional per-keyword breakdown:
+
+    OK APPENDED 15 MORE_AVAILABLE BY_KEYWORD "software engineer"=12,"frontend engineer"=3
+
+Suffix rules, all mandatory when the suffix is present:
+
+- Each quoted key MUST be one of the caller's `KEYWORDS`, echoed verbatim. Never a
+  posting-derived string — the return line carries no posting content (§9), and the
+  suffix does not change that.
+- The counts MUST sum to `<n>`.
+- Every keyword the provider attempted appears, including with count `0`. A keyword
+  absent from the suffix was never searched this call.
+- If any caller keyword contains `"` or `=`, the suffix cannot represent it: omit the
+  entire suffix and return the plain form.
+
+The suffix is optional. A provider that never emits it remains fully conformant.
+
 `EXHAUSTED` means no further unseen postings exist under these criteria. It is not an
 error — it is the caller's signal that asking again will not help.
 
@@ -172,7 +189,7 @@ Errors, returned instead of the summary:
 
 The caller validates against:
 
-    ^OK APPENDED [0-9]+ (EXHAUSTED|MORE_AVAILABLE)$|^ERR [A-Z_]+$
+    ^OK APPENDED [0-9]+ (EXHAUSTED|MORE_AVAILABLE)( BY_KEYWORD "[^"=]+"=[0-9]+(,"[^"=]+"=[0-9]+)*)?$|^ERR [A-Z_]+$
 
 Anything else is discarded unread as a protocol violation.
 
@@ -300,6 +317,7 @@ Stack- and source-agnostic. All must pass.
 | 13 | Read `queue.txt` repeatedly during a call | Every complete line is valid JSON; only the final line may be partial |
 | 14 | A posting reached through two different search routes in one call | Both produce byte-identical `url`; only one line appended |
 | 15 | Inspect every appended `url` | None contains a session token, tracking parameter, or search-context parameter |
+| 16 | Any call whose summary carries a `BY_KEYWORD` suffix | Suffix matches the §5 gate; counts sum to `<n>`; every quoted key is one of the caller's `KEYWORDS` verbatim |
 
 Tests 5, 7, 9, and 10 are the security tests. Each produces a summary indistinguishable
 from a clean run, so none is caught by validating the return value — which is why §3,

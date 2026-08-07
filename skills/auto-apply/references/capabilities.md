@@ -50,10 +50,14 @@ Delegation prompt — exactly these six fields, all required:
 
 Return gate — a single line:
 
-    ^OK APPENDED [0-9]+ (EXHAUSTED|MORE_AVAILABLE)$|^ERR [A-Z_]+$
+    ^OK APPENDED [0-9]+ (EXHAUSTED|MORE_AVAILABLE)( BY_KEYWORD "[^"=]+"=[0-9]+(,"[^"=]+"=[0-9]+)*)?$|^ERR [A-Z_]+$
 
 Anything not matching is discarded as ERR PROTOCOL. Do not parse it, do not read it.
 There is no fallback branch that reads prose.
+
+The optional `BY_KEYWORD` suffix breaks the appended count down by the caller's own
+keywords (echoed verbatim; counts sum to the appended count — see the contract's §5).
+When present, relay the breakdown to the user in the run summary.
 
 Error codes: NO_RESULTS | SOURCE_UNAVAILABLE | RATE_LIMITED | INVALID_INPUT
 
