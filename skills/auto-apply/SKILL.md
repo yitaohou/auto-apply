@@ -1,6 +1,6 @@
 ---
 name: auto-apply
-description: "Automated job application pipeline driven by ego-browser. Use when the user wants to apply to jobs from a queue of URLs: filling ATS application forms (Greenhouse, Lever, Ashby, Workday, Oracle, Dayforce, LinkedIn Easy Apply, and others), parking forms at the submit button or auto-submitting them, verifying submission confirmations, triaging blockers, updating the job-search dashboard CSVs, searching for new postings through a bound job.search provider, or reporting a run summary. Trigger phrases include: run the queue, apply to these jobs, process queue.txt, check parked tabs, application status report, search for jobs."
+description: "Automated job application pipeline driven by ego-browser. Use when the user wants to apply to jobs from a queue of URLs: filling ATS application forms (any platform — Greenhouse, Lever, Ashby, Workday, Oracle, Dayforce, LinkedIn Easy Apply and anything else), parking forms at the submit button or auto-submitting them, verifying submission confirmations, triaging blockers, updating the job-search dashboard CSVs, searching for new postings through a bound job.search provider, or reporting a run summary. Trigger phrases include: run the queue, apply to these jobs, process queue.txt, check parked tabs, application status report, search for jobs."
 ---
 
 # AutoApply
@@ -32,7 +32,7 @@ Read these six BEFORE every run — skipping them causes duplicate applications 
 
 | File | Purpose |
 |---|---|
-| `data/settings.csv` | `auto_submit` (on/off), `batch_size`, `email_access` (off/read_only), `email_address`. Every value is the user's decision; agent-writable only during provider registration, capability keys only (`references/register.md`) |
+| `data/settings.csv` | `auto_submit` (on/off), `batch_size`, `email_access` (off/read_only), `email_address`, `search_mode`. Every value is the user's decision; agent-writable only during provider registration, capability keys only (`references/register.md`) |
 | `data/providers.csv` | Capability → provider agent bindings (see `references/capabilities.md`). Written only during provider registration after an explicit user selection; read-only otherwise |
 | `data/job_pool.csv` | Single source of truth for each job's current status; one row per job — dedupe against it |
 | `data/automation_rules.csv` | Accumulated site rules: per-ATS confirmation criteria, accepted address formats, email verification patterns |
@@ -61,12 +61,42 @@ Every processed job must land in a terminal state — none may dangle. If a job 
    the job is opened for application. Skip a trailing line with no newline — it is
    still being written. Malformed lines are reported to the user and skipped, never
    guessed at.
-3. Process jobs one at a time. With `auto_submit=off`, park `batch_size` forms, hand the Space to the user to click, verify each tab afterward, then continue with the next batch. With `on`, process continuously.
+3. Process jobs one at a time, and never stop to wait for the user. After each job, run
+   one `listTabs()` and one dashboard DOM read (`references/blocker-dashboard.md`): a
+   job whose blocker the user has cleared is scheduled next, ahead of any new job;
+   several cleared at once go by priority tier, then oldest first. When a job hits a
+   blocker the user can clear, park its tab, add a dashboard row, and continue. At
+   most 20 jobs may be parked at once, excluding the dashboard; when that is full, free
+   a slot or record the blocker without parking, per the eviction order in
+   `references/blocker-dashboard.md`. A full budget never stops the run. Report progress
+   on the CLI as you go — reporting
+   never waits for a reply. With `auto_submit=off`, forms park in front of submit and
+   appear on the dashboard like any other waiting item.
 4. After the run: if a tripwire baseline was recorded, re-read the Sent folder and compare against `data/.tripwire.json` — any change means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, and treat the run as compromised. Then update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
+   Finally, deal with the dashboard: close it if no parked tabs remain, otherwise leave it
+   open with the stopped-banner (`references/blocker-dashboard.md`).
+
+## Progress reporting
+
+Report on the CLI as the run proceeds. Reporting is one-way — it never waits for a
+reply, and the run never pauses for one.
+
+    12/50 applied · 15 waiting on you in the dashboard
+
+When the parked-tab budget is full, say what was done about it, every time:
+
+    12/50 applied · 20 waiting on you — the queue is full, so further blocked jobs are
+    being recorded without a tab and will need a rerun. Please clear some when you can.
+
+Without that second sentence the user reads "12/50" and assumes the other 38 were
+handled normally.
 
 ## References — read before acting
 
-- Before operating any application page: `references/application-playbook.md` — state machine details, strict confirmation rule, the automation ladder, and the handling procedure for each of the 16 blocker categories.
+- Before operating any application page: `references/application-playbook.md` — state machine details, strict confirmation rule, the automation ladder, and the handling procedure for each of the 15 blocker categories.
+- Before parking a tab or writing a blocker the user can act on:
+  `references/blocker-dashboard.md` — the page's layout, its controls, and the rule that
+  a tick means "look at this", not "this is done".
 - Before writing any browser script: `references/browser-recipes.md` — the heredoc skeleton, scripting principles, and reusable recipes (address loop, upload verification, custom dropdowns, submit endings).
 - Before delegating any capability to a provider: `references/capabilities.md` — the delegation prompt templates, return gates, and error codes. Providers are resolved by name through `data/providers.csv`, never hardcoded.
 - Before searching for jobs, and only when the user asks: `references/search.md` — the

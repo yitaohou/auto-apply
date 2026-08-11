@@ -24,7 +24,7 @@ provider 不通过这种方式安装。core 跑起来之后,对 agent 说*注册
 ## 首次配置
 
 1. **个人档案——说一句 "set up" 就行。** agent 会发起配置访谈:先在 Finder 里打开简历文件夹让你把简历拖进去,然后从简历起草你的档案,**每个值都经你确认后才写入**——签证、薪资、到岗时间这类敏感信息永远直接问你、绝不推断。访谈会填好 `~/job-search/` 下的 `candidate_profile.json`、`answer_bank.md` 和 `data/resume_rules.csv`;这些文件你随时也可以手动编辑。
-2. **设置。** `data/settings.csv` 默认 `auto_submit=off`(agent 永不点击最终提交)、`batch_size=10`。设置值只能你本人修改——agent 不会改。
+2. **设置。** `data/settings.csv` 默认 `auto_submit=on`(agent 点击最终提交并核验确认页;想逐个亲手提交可改为 `off`)、`batch_size=500`。设置值只能你本人修改——agent 不会改。
 3. **Provider(可选,邮箱验证码功能需要)。** 让 agent *注册 provider*:它会列出 [PROVIDERS.md](PROVIDERS.md) 里的选项,经你确认后安装你选中的那个,询问授权(`email_access = read_only`)与邮箱地址,然后写入绑定。之后重启会话,并完成该 provider 自声明的访问准备(第一方 Gmail 读取器:在 ego lite 里登录一次 Gmail)。跳过这一步的唯一后果是:需要邮箱验证码的职位会被记为 blocked。
 
 ## 启动一次投递

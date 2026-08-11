@@ -38,8 +38,9 @@ your confirmation (see First-time setup, step 3).
    inferred. The interview fills `candidate_profile.json`, `answer_bank.md`, and
    `data/resume_rules.csv` under `~/job-search/`; you can also edit those files by
    hand at any time.
-2. **Settings.** `data/settings.csv` defaults to `auto_submit=off` (the agent never
-   clicks final submit) and `batch_size=10`. Only change values yourself — the agent
+2. **Settings.** `data/settings.csv` defaults to `auto_submit=on` (the agent clicks
+   final submit and verifies confirmation; set it to `off` if you want to click every
+   submit yourself) and `batch_size=500`. Only change values yourself — the agent
    won't.
 3. **Providers (optional, needed for email verification codes).** Ask the agent to
    *register providers*: it lists the options from [PROVIDERS.md](PROVIDERS.md),
