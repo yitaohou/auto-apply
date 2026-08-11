@@ -9,7 +9,7 @@ Each mechanism has a runtime form as a CSV field. The enum values in this docume
 | State machine | `job_pool.status` | 7 states below |
 | Confirmation rule | `application_log` evidence columns | `submission_evidence` + `confirmation_url` + `confirmation_text` |
 | Automation ladder | `blocker_queue.next_retry_strategy` | `browser automation` / `visual control` / `user handoff` / `skip` |
-| Known blockers | `blocker_queue.blocker_category` | 16 controlled values below |
+| Known blockers | `blocker_queue.blocker_category` | 15 controlled values below |
 
 ## 1. State Machine
 
@@ -124,13 +124,13 @@ Rate-limiting rule (important): if the same field fails repeatedly, record a blo
 
 ## 4. Known Blockers — `blocker_category`
 
-Legal values (16). Do NOT invent new values; use `unknown` for anything unclassifiable and let the user decide whether to extend this table.
+Legal values (15). Do NOT invent new values; use `unknown` for anything unclassifiable and let the user decide whether to extend this table.
 
 | Value | Situation |
 |---|---|
 | `captcha` | CAPTCHA / hCaptcha / reCAPTCHA / Cloudflare / anti-bot checks |
 | `login` | Login required, account creation required, 2FA |
-| `session-timeout` | Session expired |
+| `session-timeout` | The session expired **as the direct cause**: mid-fill, or while a completed form waited for the user's click |
 | `submit-timeout` | Submit clicked; neither confirmation nor error within the wait window |
 | `dropdown` | Dropdown selection fails; readback still reports invalid |
 | `address` | Address field rejects every format |
@@ -139,13 +139,13 @@ Legal values (16). Do NOT invent new values; use `unknown` for anything unclassi
 | `missing-material` | Form requires material the user hasn't provided |
 | `sensitive-question` | Visa/salary/EEO wording doesn't match the profile; cannot auto-fill |
 | `permission` | Browser or file-access permission failure |
-| `overlay` | Extension overlay or popup covers a button |
+| `overlay` | An extension overlay or popup covers a button **and level-2 repair failed to dismiss it** |
 | `email-verification` | The verification attempt itself failed — retry later or give up on this job: email never arrived, code rejected by the ATS, multiple matches undecidable, or this job already failed a code attempt |
 | `email-access` | The email channel is unavailable and only a user action fixes it: `email_access` off, `email_address` missing, no provider bound, mailbox not logged in, mail-account 2FA challenge, provider protocol violation, masked address mismatch, or a tripwire hit |
-| `unknown-ats` | Not one of the eleven target ATSes |
 | `unknown` | Unclassifiable — `what_happened` MUST describe the symptom |
 
-Fourteen values have a defined procedure below; `unknown-ats` and `unknown` are the escape hatches. When something goes wrong: classify first, then follow that category's procedure in order.
+Fourteen values have a defined procedure below; `unknown` is the escape hatch. When
+something goes wrong: classify first, then follow that category's procedure in order.
 
 ### `dropdown` — looks selected but isn't
 
@@ -212,7 +212,17 @@ Three variants:
 - Parked tab found expired during verification → `Blocked`, `can_retry = yes`.
 - User idle too long in `auto_submit=off` → same as above.
 
-Inherited login state does not prevent session timeouts. This is why `batch_size` exists — the shorter the park-to-click window, the better.
+Inherited login state does not prevent session timeouts. Under `auto_submit=off` this is
+why a smaller `batch_size` helps — the shorter the park-to-click window, the less chance
+of expiry. Under `auto_submit=on` no such window exists, and `batch_size` serves only as
+a cap on how much one run attempts.
+
+A parked tab found dead during polling is **not** this blocker. That tab was parked for
+some other reason — a login wall, a CAPTCHA — and expiry is a consequence, not the
+cause. Close the tab, return the job to `Pending`, and **leave the original blocker in
+`blocker_queue.csv` untouched**. Overwriting it with `session-timeout` would erase the
+reason the job stopped in the first place, and the learning loop in Run Loop step 4
+would then accumulate a rule about expiry instead of about the real obstacle.
 
 ### `submit-timeout` — no response after submit
 
@@ -232,13 +242,14 @@ Mid-run failure → record the EXACT permission needed, stop that job.
 
 macOS notes: first launch of ego lite may hit Gatekeeper (the installer strips quarantine; if still blocked, allow it under System Settings → Privacy & Security). File upload may trigger a file-access prompt.
 
-### `overlay` — overlay covers a button
+### `overlay` — a popup covers the control
 
-When Next / Review / Submit doesn't respond:
-1. Close side panels or overlays.
-2. Focus the button and press Enter.
-3. Retry once.
-4. Still blocked → record the blocker.
+Try to dismiss it first. This is ordinary level-2 work: `pressKey('Escape')`, click the
+banner's own close control, scroll the target into view. Record the blocker only when
+the overlay survives that.
+
+Recording `overlay` on first sight wastes a job the agent could have finished on its
+own.
 
 Job-search extensions migrated from Chrome (Simplify etc.) should be disabled inside ego lite — their overlays are the usual culprit.
 
@@ -335,7 +346,7 @@ Covers: `email_access = off`, `email_address` missing, no provider bound (or the
 Work authorization, visa, salary, EEO, and anything on the `never_guess` list.
 
 - Form wording CLOSELY matches `candidate_profile.json` / `answer_bank.md` → auto-fill.
-- Wording differs → record `Needs user`; ask the user ONE focused question (don't halt the whole run).
+- Wording differs → record `Needs user`; put ONE focused question in the job's dashboard row — the notes field carries the answer (`references/blocker-dashboard.md`). Never ask in the conversation, and don't halt the run.
 - No corresponding entry at all → `Needs user`.
 
 Visa questions are full of wording traps (`now or in the future` vs `currently`) — one word changes the meaning. When unsure, ask; never guess.
@@ -346,19 +357,26 @@ The form requires something the user hasn't provided: portfolio, references, cer
 
 Record `Needs user`; state exactly what's missing in `blocker_queue.user_action_needed`.
 
-### `unknown-ats` — not on the target list
-
-Not one of the eleven target ATSes (Greenhouse, Lever, Ashby, Workable, Jobvite, BambooHR, Workday, Oracle Taleo, Oracle Recruiting Cloud, Dayforce, LinkedIn Easy Apply).
-
-Don't guess, don't skip. Record `Blocked` with the domain and a screenshot; the user decides whether to add it to the list.
-
 ### `unknown` — unclassifiable
 
 `blocker_queue.what_happened` MUST describe the symptom. This is the leak-prevention valve: without it, unclassifiable cases get shoehorned into wrong categories and the statistics rot. Never invent new category values; the user owns the enum.
 
-## 5. ATSes without prebuilt criteria
+## 5. Learning an ATS
 
-Workable, Jobvite, BambooHR, Oracle Taleo, Oracle Recruiting Cloud, Dayforce, and LinkedIn Easy Apply have NO prebuilt confirmation criteria. On first contact, use the generic procedures above, then record the actually-observed confirmation page criteria, working address formats, and quirks into `automation_rules.csv`. Get Greenhouse and Workday working first; build the rest from real failure data, not speculation.
+There is one set of procedures, and it applies to every ATS. What differs between them
+is only how much has been observed so far.
+
+On first contact with any ATS, work from the generic procedures in this file, then
+record what actually happened into `automation_rules.csv`: the confirmation page's real
+criteria, the address formats it accepted, the email verification pattern, and any
+quirk worth not rediscovering. On the next job at that ATS, those rules apply.
+
+The confirmation criteria written into this file are not privileged — they are simply
+observations someone already made. Treat a rule you learned yourself the same way.
+
+Sections above name specific platforms where a hazard is especially common — Workday's
+custom dropdowns, the Workday/Oracle mid-application verification. Those are hints
+about where to be careful, not a list of what can be processed.
 
 ## 6. Not a blocker: tab cleanup
 
@@ -378,7 +396,11 @@ mandatory.
 
 ## 8. Per-job processing sequence
 
-1. Identify the ATS. Not on the eleven-ATS list → `Blocked`, `unknown-ats`.
+1. Identify the ATS from the page and record it in `job_pool.ats`. This is a label for
+   accumulated experience, never a gate: an ATS you have not seen before is processed
+   exactly like one you have, using the generic procedures in this file. Check
+   `automation_rules.csv` for rules already learned about this ATS and apply them;
+   where there are none, work from the generic procedures and record what you observe.
 2. Open the application page. Login page → `Blocked`, `login`. Permission failure → `Blocked`, `permission`.
 
    When the application page is open and the ATS is identified, fill in the two fields
@@ -393,12 +415,29 @@ mandatory.
 5. Address field: six-format bounded loop + the autocomplete iron rule. All rejected → `Blocked`, `address`. Success → record the accepted format per employer.
 6. Education & work history: fill from `candidate_profile.json` structured fields. NEVER extract from the resume PDF — dates and field boundaries are unreliable.
 7. Upload resume: pick variant per `resume_rules.csv` → upload → verify attached. Unverifiable → `Blocked`, `upload`. Verified → record actual filename in `application_log.resume_used`.
-8. Visa / salary / EEO questions: wording closely matches profile/answer bank → fill; differs → `Needs user`, `sensitive-question`, ask one focused question.
+8. Visa / salary / EEO questions: wording closely matches profile/answer bank → fill; differs → `Needs user`, `sensitive-question`, one focused question in the job's dashboard row.
 8a. Mid-application email verification (Workday / Oracle commonly interrupt here): handle per the `email-verification` section — check the preconditions, anchor `NOT_BEFORE` before triggering the send, record the application tab's URL and task space before delegating, and re-verify the form state after the provider returns (recipe in `browser-recipes.md`). Form state lost after return → `Blocked` / `unknown`, never refill blindly.
 9. At the final submit button, branch on `auto_submit`:
    - `on` → register the wait (URL change OR confirmation text, first wins), then click → judge per section 2 (mind the delay) → `Submitted` (fill evidence columns) or `Pending confirmation` → close tab.
    - `off` → do NOT click → `Parked at submit` → record `space_name` / `tab_index` / `parked_at` → keep tab → next job.
 
-User-intervention loop (`auto_submit=off` only): report "N tabs parked in Space X" → user clicks each submit WITHOUT closing pages → user says done → verify each tab with the 25-second window and the five-state table in section 2 → close `Submitted` tabs → next batch. ATS sessions are short; don't let the park-to-click gap stretch. But no matter how long it stretched, verify by opening the tab — never by elapsed time.
+When a job stops on a blocker the user can clear in the browser — `login`, `captcha`,
+`overlay`, or a filled form awaiting a click — park its tab rather than closing it, add
+a row to the dashboard (`references/blocker-dashboard.md`), and move to the next job.
+Never wait.
+
+Blockers the user cannot clear in a browser take the same non-blocking path but need a
+place to act:
+
+- `sensitive-question` → the dashboard row's notes field carries the answer. Keep the
+  tab: the form is partly filled.
+- `missing-material` → `open` the folder the file belongs in (setup rule 4) and say so
+  in the row's instructions. Detect arrival by scanning the folder, not by asking.
+
+Blockers no user action can clear — `validation-timing`, `unknown` — get a
+`blocker_queue.csv` row and no tab and no dashboard entry. A row the user cannot act on
+is noise on a page whose value is that everything on it is actionable.
+
+Verifying the user's clicks (`auto_submit=off` only): a parked form appears on the dashboard as a tier-1 row (`Ready to submit — review and click Submit in tab #N`) → the user clicks submit WITHOUT closing the page, then ticks the row → on the next between-jobs poll, verify that tab with the 25-second window and the five-state table in section 2 → close `Submitted` tabs and free their slots. The run never pauses for this. ATS sessions are short; don't let the park-to-click gap stretch. But no matter how long it stretched, verify by opening the tab — never by elapsed time.
 
 Run wrap-up: accumulate results into `daily_dashboard.csv` (same-day rows accumulate — never add a second row for the same day). Then scan `blocker_queue.csv`: any (blocker_category, ATS) appearing ≥2 times becomes a rule in `automation_rules.csv`. This is the only learning loop; it runs because you run it.
