@@ -301,25 +301,6 @@ cliLog(JSON.stringify({ checkpoint: 'pre-delegation', url: before.url }))
 // anything lost → Blocked / unknown. Never refill blindly.
 ```
 
-## Recipe: Sent-folder tripwire
-
-The parent agent cannot be made unable to send mail — it holds full JS execution because form-filling requires it. Prevention being impossible, detection is mandatory: that is this recipe's entire reason to exist.
-
-At RUN START (only when `email_access = read_only`): open the mailbox's Sent folder, read the identity of the TOPMOST message (sent time + subject), write it to `data/.tripwire.json`, close the tab. Use the top message's identity, not a message count — Gmail's Sent view does not display a reliable count, and the top row is cheap to read.
-
-At RUN END: read the topmost Sent message again and compare. ANY change → a message was sent during the run: abort, record `Blocked` / `email-access`, and alert the user loudly. A tripwire hit means the agent's model of its own behavior is wrong; continuing means acting on a wrong model. A false positive only costs one aborted batch.
-
-```js
-const tab = await openOrReuseTab('https://mail.google.com/mail/u/0/#sent', { wait: true, timeout: 30 })
-const snap = await snapshotText()
-// The first message row in the Sent list carries subject + date text; capture the raw row.
-const topRow = (snap.split('\n').find(l => /row|link/i.test(l) && /\d{1,2}:\d{2}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/i.test(l)) ?? '').trim()
-cliLog(JSON.stringify({ tripwire_baseline: topRow }))   // parent writes this into data/.tripwire.json
-await closeTab(tab.targetId)
-```
-
-The stored baseline contains a sent time and subject only — never a verification code, never credentials.
-
 ## Verification pass over parked tabs (after the user clicks)
 
 One script, bounded per tab: `takeOverTaskSpace` → `listTabs()` → for each parked tab, `switchTab`, give it the 25-second window (bounded poll as in the `auto_submit=on` ending), classify by the playbook's five-state table, `closeTab` only the `Submitted` ones, and `cliLog` one JSON array with a verdict per tab.
@@ -330,4 +311,4 @@ One script, bounded per tab: `takeOverTaskSpace` → `listTabs()` → for each p
 - No importing Playwright or launching any other browser. ego-browser IS the automation layer.
 - No invented helper names — check `~/.claude/skills/ego-browser/SKILL.md` and `help('<name>')` when unsure.
 - No screenshots as the default observation method — `snapshotText()` first; screenshots are ladder level 3.
-- Nothing but reads against any mailbox domain. Never compose, reply, forward, or send; never delete, archive, or label; never touch mail settings. The only permitted mailbox operations are the Sent-folder tripwire reads above — everything else belongs to a bound provider.
+- No operations against any mailbox domain. Never open, read, compose, reply, forward, or send; never delete, archive, or label; never touch mail settings. Every mailbox operation belongs to a bound provider.
