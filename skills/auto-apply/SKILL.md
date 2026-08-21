@@ -39,8 +39,6 @@ Read these six BEFORE every run — skipping them causes duplicate applications 
 | `data/blocker_queue.csv` | Retryable failures from earlier runs |
 | `queue.txt` | Input: one job per line — a bare URL, or a JSON object with search metadata. Append-only; a search provider may be appending to it concurrently (`references/search.md`) |
 
-`data/.tripwire.json` holds the Sent-folder tripwire baseline (see Run Loop steps 1 and 4). The agent writes it at run start and compares at run end; it stores only a message's sent time and subject, never any code or credential.
-
 Read when needed: `candidate_profile.json` and `answer_bank.md` before filling any form; `data/resume_rules.csv` when choosing a resume; `data/application_log.csv` and `data/follow_up.csv` for history; `data/search_profile.csv` when the user asks for a job search — user-edited only, like `settings.csv` and `providers.csv`, and never derived from `candidate_profile.json`.
 
 Write as you go: every attempt (including failures) appends to `application_log.csv`; status changes update `job_pool.csv`; obstacles append to `blocker_queue.csv`; each run's totals accumulate into `data/daily_dashboard.csv` (one row per day — add to today's row, never create a second).
@@ -53,7 +51,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
 
 ## Run Loop
 
-1. Read the six pre-run files. If `candidate_profile.json` is missing or still unfilled — `candidate.legal_name` and `candidate.email` are empty strings — offer the first-run setup interview (`references/setup.md`) before anything else. The first run generates the file from the template, so a complete-looking JSON skeleton full of empty strings is the NOT-set-up state; file existence never counts as set up. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. If `email_access = read_only`, record the Sent-folder tripwire baseline into `data/.tripwire.json` (recipe in `references/browser-recipes.md`). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
+1. Read the six pre-run files. If `candidate_profile.json` is missing or still unfilled — `candidate.legal_name` and `candidate.email` are empty strings — offer the first-run setup interview (`references/setup.md`) before anything else. The first run generates the file from the template, so a complete-looking JSON skeleton full of empty strings is the NOT-set-up state; file existence never counts as set up. If any capability lacks an `enabled = on` row in `providers.csv`, offer provider registration (`references/register.md`) before starting — offer, never enter it uninvited. Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before starting new work.
 2. Add new `queue.txt` entries to `job_pool.csv` as `Pending`; skip URLs already
    present. A line starting with `http` is a bare URL; a line starting with `{` is a
    JSON object whose fields populate `job_title`, `company`, `location`, and `level`
@@ -72,7 +70,7 @@ Every processed job must land in a terminal state — none may dangle. If a job 
    on the CLI as you go — reporting
    never waits for a reply. With `auto_submit=off`, forms park in front of submit and
    appear on the dashboard like any other waiting item.
-4. After the run: if a tripwire baseline was recorded, re-read the Sent folder and compare against `data/.tripwire.json` — any change means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, and treat the run as compromised. Then update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
+4. After the run: update `daily_dashboard.csv` and scan `blocker_queue.csv` — any (blocker_category, ATS) pair appearing twice or more, including `(email-verification, ATS)` pairs, becomes a rule in `automation_rules.csv`. This scan is the system's only learning loop; nothing triggers it automatically.
    Finally, deal with the dashboard: close it if no parked tabs remain, otherwise leave it
    open with the stopped-banner (`references/blocker-dashboard.md`).
 

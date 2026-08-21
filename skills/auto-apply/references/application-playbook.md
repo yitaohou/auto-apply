@@ -141,7 +141,7 @@ Legal values (15). Do NOT invent new values; use `unknown` for anything unclassi
 | `permission` | Browser or file-access permission failure |
 | `overlay` | An extension overlay or popup covers a button **and level-2 repair failed to dismiss it** |
 | `email-verification` | The verification attempt itself failed — retry later or give up on this job: email never arrived, code rejected by the ATS, multiple matches undecidable, or this job already failed a code attempt |
-| `email-access` | The email channel is unavailable and only a user action fixes it: `email_access` off, `email_address` missing, no provider bound, mailbox not logged in, mail-account 2FA challenge, provider protocol violation, masked address mismatch, or a tripwire hit |
+| `email-access` | The email channel is unavailable and only a user action fixes it: `email_access` off, `email_address` missing, no provider bound, mailbox not logged in, mail-account 2FA challenge, provider protocol violation, or masked address mismatch |
 | `unknown` | Unclassifiable — `what_happened` MUST describe the symptom |
 
 Fourteen values have a defined procedure below; `unknown` is the escape hatch. When
@@ -335,11 +335,10 @@ Expect the delegation to take up to about three minutes: the contract requires p
 
 ### `email-access` — the email channel is unavailable, a user action is required
 
-Covers: `email_access = off`, `email_address` missing, no provider bound (or the bound agent unavailable), mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, a provider protocol violation, or the Sent-folder tripwire firing.
+Covers: `email_access = off`, `email_address` missing, no provider bound (or the bound agent unavailable), mailbox not logged in, the mail account raising its own 2FA challenge, a masked address on the page not matching `settings.csv`, or a provider protocol violation.
 
 - These are not retryable by waiting — a user action is required. Record `Blocked` with a precise `user_action_needed` (e.g. restoring the provider's mailbox access the way its README describes).
 - Keep `email-access` distinct from `email-verification`: the remedies are opposite. `email-verification` means "try again later"; `email-access` means "the user must go fix mailbox access". Never merge them.
-- If the Sent-folder tripwire fires (see `browser-recipes.md`), abort the entire run immediately, record `email-access`, and alert the user loudly. A tripwire hit is not a test failure — it means a message left the mailbox during a run.
 
 ### `sensitive-question` — wording mismatch
 
