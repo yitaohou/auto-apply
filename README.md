@@ -13,7 +13,7 @@ search LinkedIn/Indeed for new postings.
 
 - Claude Code with the ego lite (ego-browser) skill installed
 - ego lite logged into the sites you apply through (it reuses your browser sessions)
-- Python 3 on `PATH` (used by the search helper script)
+- Python 3 on `PATH` (used by the decision and ranking scripts)
 
 ## Install
 
@@ -99,9 +99,16 @@ a clicked button is never assumed to be a submission.
 ## Searching for jobs
 
 Fill `~/job-search/data/search_profile.csv` (keywords, locations, remote policy,
-freshness window, free-text requirements, default result count), then say
-**"find me jobs"**. The `job-searcher` agent appends matching postings to
-`queue.txt`; run the queue afterwards. Searching never happens on its own.
+freshness window, free-text requirements — add `sources=indeed` or `sources=both`
+there to go beyond LinkedIn — and a default result cap, 0 for none), then say
+**"find me jobs"**. The `job-searcher` agent runs two scripts: `search.js` crawls
+inside your browser session (one tab per site, rate limits built in; a LinkedIn
+security challenge stops every crawl until you delete `data/LINKEDIN_STOP`) and
+`classify.py` filters and ranks what was captured (tiers A–D; the rules are in
+`skills/auto-apply/references/search-loop.md`) and appends the A/B postings to
+`queue.txt`. Run the queue afterwards. Searching never happens on its own.
+Each run leaves `data/search/<date>/ranked.csv` and `dropped.csv` so you can see
+why a posting was or was not queued; Indeed requires you to be logged in first.
 
 ## Layout
 

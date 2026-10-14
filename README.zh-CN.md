@@ -8,7 +8,7 @@ Claude Code 上的半自动 ATS 求职申请工作流,由 ego-browser(ego lite)�
 
 - 已安装 ego lite(ego-browser)技能的 Claude Code
 - ego lite 中已登录你要投递的网站(它复用你的浏览器会话)
-- `PATH` 中有 Python 3(搜索辅助脚本用)
+- `PATH` 中有 Python 3(决策与分级脚本用)
 
 ## 安装
 
@@ -59,7 +59,7 @@ Claude Code 上的半自动 ATS 求职申请工作流,由 ego-browser(ego lite)�
 
 ## 搜索职位
 
-填好 `~/job-search/data/search_profile.csv`(关键词、地点、远程政策、时间窗口、自由文本要求、默认结果数),然后说 **"find me jobs"**。`job-searcher` agent 会把匹配的职位追加到 `queue.txt`;之后再跑队列。搜索永远不会自动发生。
+填好 `~/job-search/data/search_profile.csv`(关键词、地点、远程政策、时间窗口、自由文本要求——在其中写 `sources=indeed` 或 `sources=both` 可以扩展到 LinkedIn 之外——以及默认结果上限,0 表示不限),然后说 **"find me jobs"**。`job-searcher` agent 只跑两个脚本:`search.js` 在你的浏览器会话里爬取(每个站点一个标签页,限速内建;LinkedIn 一旦出现安全验证,所有爬取停止,直到你删除 `data/LINKEDIN_STOP`),`classify.py` 过滤并分级(A–D,规则见 `skills/auto-apply/references/search-loop.md`),把 A/B 档追加到 `queue.txt`;之后再跑队列。搜索永远不会自动发生。每次运行会留下 `data/search/<日期>/ranked.csv` 和 `dropped.csv`,可以查看某个职位为何入队或被丢弃;Indeed 需要你先登录。
 
 ## 目录结构
 

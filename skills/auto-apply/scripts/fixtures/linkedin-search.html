@@ -1,0 +1,77 @@
+<!doctype html>
+<!-- Test page for search.js (LinkedIn "AI-powered" results UI, 2026-10 shape).
+     Driven by the query string exactly like the real page:
+       ?keywords=…&start=N       pages of 25/8/3/2 cards (ids 1001…), start ≥ 100 → none
+       ?…&mode=next              start= is ignored; a "Next" button advances the page
+                                 (page index kept in localStorage.li_fixture_page — reset on start=0)
+     Clicking a card sets #currentJobId=<id> and fills the detail pane. Card 1003 is marked
+     closed. Card 1005 has no JD. Odd ids are "Easy Apply", even ids apply "on company website". -->
+<html><head><meta charset="utf-8"><title>Software Engineer Jobs in Canada</title>
+<style>
+  body { margin:0; font-family: system-ui, sans-serif; }
+  #layout { display:flex; height:100vh; }
+  #list { width:420px; overflow-y:auto; border-right:1px solid #ccc; height:100vh; }
+  #pane { flex:1; padding:16px; overflow-y:auto; }
+  div[role="button"] { padding:10px 12px; border-bottom:1px solid #eee; cursor:pointer; }
+  .artdeco-pill { display:inline-block; border:1px solid #999; border-radius:12px; padding:2px 8px; margin-right:4px; }
+</style></head>
+<body>
+<div id="layout">
+  <div id="list"></div>
+  <div id="pane"><p>Select a job to see details.</p></div>
+</div>
+<script>
+(function () {
+  var q = {};
+  location.search.slice(1).split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) q[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || ''); });
+  var SIZES = [25, 8, 3, 2];
+  var FIRST = [1001, 1026, 1034, 1037];
+  var page;
+  if (q.mode === 'next') {
+    if (!q.start) localStorage.li_fixture_page = '0';
+    page = Number(localStorage.li_fixture_page || '0');
+  } else {
+    page = Math.floor(Number(q.start || 0) / 25);
+  }
+  var COMPANIES = ['Shopify', 'Wealthsimple', 'Cohere', 'Faire', 'Clio', 'Ada', 'Vidyard', 'Top Hat'];
+  var CITIES = ['Toronto, ON (Hybrid)', 'Vancouver, BC (Remote)', 'Waterloo, ON (On-site)', 'Montreal, QC (Hybrid)'];
+  var list = document.getElementById('list');
+  var pane = document.getElementById('pane');
+  function card(id) {
+    var d = document.createElement('div');
+    d.setAttribute('role', 'button');
+    d.setAttribute('componentkey', 'job-card-component-ref-' + id);
+    d.setAttribute('tabindex', '0');
+    var title = (id % 3 === 0 ? 'Senior ' : '') + 'Software Engineer ' + (id % 2 ? '(Full Stack)' : '(Platform)');
+    d.innerHTML = '<div>' + title + ' (Verified job)</div><div>' + title + '</div><div>' + COMPANIES[id % COMPANIES.length] + '</div><div>' + CITIES[id % CITIES.length] +
+      '</div><div><time datetime="2026-10-1' + (id % 4) + '">' + (id % 4 + 1) + ' days ago</time></div><div><span class="artdeco-pill">' + (id % 2 ? 'Easy Apply' : 'Promoted') + '</span></div>';
+    d.addEventListener('click', function () { select(id, title); });
+    return d;
+  }
+  function select(id, title) {
+    location.hash = 'currentJobId=' + id;
+    var closed = id === 1003, noJd = id === 1005;
+    var jd = noJd ? '' : '<div id="JobDetails_AboutTheJob_' + id + '"><h3>About the job</h3><p>We are looking for a ' + title + ' to join ' + COMPANIES[id % COMPANIES.length] +
+      '. You will build TypeScript and React front ends and Python services on AWS. Requirements: ' + (id % 3 === 0 ? '7+' : '3+') + ' years of experience. ' +
+      (id % 5 === 0 ? 'Bilingual (English and French) required. ' : '') + '</p><p>Benefits: health, dental, RRSP matching.</p></div>';
+    pane.innerHTML = '<h1>' + title + '</h1><p><a href="https://www.linkedin.com/company/' + COMPANIES[id % COMPANIES.length].toLowerCase() + '/">' + COMPANIES[id % COMPANIES.length] + '</a> · ' +
+      CITIES[id % CITIES.length] + '</p>' +
+      (closed ? '<p>No longer accepting applications</p>' : (id % 2 ? '<button id="jobs-apply-button-id" aria-label="Easy Apply to ' + title + '">Easy Apply</button>'
+                                                                 : '<button id="jobs-apply-button-id" aria-label="Apply to ' + title + ' on company website">Apply</button>')) +
+      jd + '<h2>People also viewed</h2><p>Other roles…</p>';
+  }
+  var n = page < SIZES.length ? SIZES[page] : 0;
+  for (var i = 0; i < n; i++) list.appendChild(card(FIRST[page] + i));
+  if (q.mode === 'next' && page < SIZES.length - 1) {
+    var next = document.createElement('button');
+    next.setAttribute('aria-label', 'Next');
+    next.textContent = 'Next';
+    next.addEventListener('click', function () { localStorage.li_fixture_page = String(page + 1); location.hash = ''; location.reload(); });
+    list.appendChild(next);
+  }
+  var count = document.createElement('p');
+  count.textContent = (SIZES.reduce(function (a, b) { return a + b; }, 0)) + ' results';
+  list.insertBefore(count, list.firstChild);
+})();
+</script>
+</body></html>
