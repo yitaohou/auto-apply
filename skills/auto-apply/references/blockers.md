@@ -114,7 +114,7 @@ Classify first, then follow the category's procedure in order.
 
 **`missing-material`** — Portfolio, references, cover letter, certificates. `Needs user`; name exactly what's missing in `user_action_needed`; `open` the target folder and detect arrival by scanning it.
 
-**`unknown`** — `what_happened` MUST describe the symptom. The leak-prevention valve against shoehorning into wrong categories.
+**`unknown`** — `what_happened` MUST describe the symptom. The leak-prevention valve against shoehorning into wrong categories. `scripts/blocker_classify.py` triages the accumulated `unknown` rows into `data/blocker_review.csv` (a deterministic symptom family per row plus the local model's pick) for the user to review; it never edits `blocker_queue.csv`, and only the user extends this enum.
 
 ## 5. Learning an ATS
 
