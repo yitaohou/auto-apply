@@ -50,7 +50,7 @@ Claude Code 上的半自动 ATS 求职申请工作流,由 ego-browser(ego lite)�
 |---|---|
 | `skills/auto-apply/SKILL.md` | 技能本体:契约、边界、运行循环 |
 | `skills/auto-apply/references/` | `blockers.md`(状态、确认规则、阻塞处理)、`ats-notes.md`(各 ATS 事实)、`page-loop.md`(逐页填表循环)、`dashboard.md`、`setup.md` |
-| `skills/auto-apply/scripts/` | 辅助脚本(`seen.py` 去重/规范化;逐页填表脚本下一版加入) |
+| `skills/auto-apply/scripts/` | 逐页填表循环——`walker.js`(页面 → 字段)、`decide.py`(字段 → 来源,规则缓存)、`driver.js`(填入 + 回读)、`formfill.js`(在 `ego-browser nodejs` 内运行的入口);`fixtures/form.html` 测试表单;`seen.py` 去重/规范化 |
 | `skills/auto-apply/templates/` | 档案模板与首次运行时复制到 `~/job-search/data/` 的 CSV 表头 |
 | `agents/` | `email-code-reader`、`job-searcher` |
 

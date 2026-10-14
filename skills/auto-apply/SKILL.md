@@ -60,13 +60,15 @@ Write as you go: every attempt (including failures) appends to `application_log.
 
 ## Operating a page
 
-The per-page loop is specified in `references/page-loop.md`: walker (page → fields JSON) → decide (field → source) → driver (fill + readback). Until its scripts ship, fill pages by the same discipline by hand:
+The scripts are the executor (`references/page-loop.md` has the exact calls and JSON shapes); the model decides only what the scripts cannot. Per page, with `$JOB_DIR = ~/job-search/data/pages/<job_id>/`:
 
-- Snapshot once per page; fill every field on the page in one script; read every value back. "Option clicked AND field reads back the expected value" is the only acceptable assertion — "nothing looked wrong" is not.
-- Values come only from `candidate_profile.json` / `answer_bank.md` / `resume_rules.csv`; a `never_guess` label stops the page (`Needs user`, dashboard row). Customised free text (why this company, cover letter) is written from `answer_bank.md` facts, short, and never cached as a rule.
-- Control handling is per ATS: `references/ats-notes.md` holds the verified methods (Workday prompt dropdowns, Greenhouse react-select, segmented code boxes, uploads, submit endings). A method not listed there is tried once, then the field is a blocker — never the same failing script three times.
-- Register the confirmation wait BEFORE clicking submit; URL change OR confirmation text, first wins (`references/blockers.md` §2).
-- Email verification codes: spawn `email-code-reader` exactly as `references/blockers.md` describes; never read mail yourself in the form's task space.
+1. `formfill.js` mode `walk` (inside `ego-browser nodejs`) → `fields.json` + a one-line-per-field table. Read the table; never re-snapshot the page to "double check".
+2. `decide.py decide --job-dir $JOB_DIR --company …` → `decisions.json`. `ask_user` non-empty → the page stops (`Needs user`, park, dashboard row). `flags: ai_prohibited` → `Skipped`. `fields.json.flags`: `closed` → `Skipped`; `login_wall`, `captcha` → blocker; `captcha_present` alone is noise.
+3. Only if `llm[]` is non-empty: answer those fields — once, as one JSON file — from `candidate_profile.json` / `answer_bank.md` facts, then `decide.py merge --llm $JOB_DIR/llm.json`. Free text is short, factual, never a guessed fact, never climbing. Never answer a field the gate sent to `ASK_USER`.
+4. `formfill.js` mode `fill` → `results.json`. Every result is a readback — "option clicked AND the field reads back the expected value"; the driver already tried its two methods, so an `ok=false` gets at most **one** manual attempt from `references/ats-notes.md`, then it is a blocker. Never the same failing script three times.
+5. `formfill.js` mode `next` → the next page's `fields.json` (or the validation errors) → back to 2. On the last page, per `auto_submit`: `off` → park in front of the submit button; `on` → mode `submit`, which registers the wait before clicking and writes `submit.json` — that file is the evidence for the confirmation rule (`references/blockers.md` §2); `reason: timeout` with no matched text is `Pending confirmation`, not `Submitted`.
+
+Email verification codes: spawn `email-code-reader` exactly as `references/blockers.md` describes; never read mail yourself in the form's task space. After touching any script, run the fixture (`scripts/fixtures/form.html`) before a real page.
 
 ## Task spaces and tabs
 

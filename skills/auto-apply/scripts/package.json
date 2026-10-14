@@ -1,0 +1,6 @@
+{
+  "name": "auto-apply-scripts",
+  "private": true,
+  "type": "module",
+  "description": "ES modules imported from an `ego-browser nodejs` heredoc; ego-browser helpers are globals."
+}

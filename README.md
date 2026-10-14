@@ -78,7 +78,7 @@ freshness window, free-text requirements, default result count), then say
 |---|---|
 | `skills/auto-apply/SKILL.md` | The skill: contract, boundaries, run loop |
 | `skills/auto-apply/references/` | `blockers.md` (states, confirmation rule, blocker procedures), `ats-notes.md` (per-ATS facts), `page-loop.md` (per-page fill loop), `dashboard.md`, `setup.md` |
-| `skills/auto-apply/scripts/` | Helper scripts (`seen.py` dedupe/canonicalisation; the page-loop scripts arrive next release) |
+| `skills/auto-apply/scripts/` | The page loop — `walker.js` (page → fields), `decide.py` (field → source, rule cache), `driver.js` (fill + readback), `formfill.js` (entry point run inside `ego-browser nodejs`); `fixtures/form.html` test form; `seen.py` dedupe/canonicalisation |
 | `skills/auto-apply/templates/` | Profile template and the CSV schemas copied into `~/job-search/data/` on first run |
 | `agents/` | `email-code-reader`, `job-searcher` |
 
