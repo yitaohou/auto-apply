@@ -1,6 +1,6 @@
 {
   "name": "auto-apply",
-  "description": "Semi-automated ATS job application workflow with pluggable capability providers.",
-  "version": "0.2.0",
+  "description": "Semi-automated ATS job application workflow for Claude Code, driven by ego-browser.",
+  "version": "0.3.0",
   "author": { "name": "yitaohou" }
 }
