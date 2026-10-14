@@ -35,7 +35,7 @@ search LinkedIn/Indeed for new postings.
    inferred. The interview fills `candidate_profile.json`, `answer_bank.md`, and
    `data/resume_rules.csv` under `~/job-search/`; you can edit those files by hand
    at any time.
-2. **Settings.** `data/settings.csv` has three keys, all yours to edit — the agent
+2. **Settings.** `data/settings.csv` has four keys, all yours to edit — the agent
    never writes this file:
    - `auto_submit` — `on` (default): the agent clicks final submit and verifies the
      confirmation page; `off`: every completed form is parked for your click.
@@ -45,9 +45,40 @@ search LinkedIn/Indeed for new postings.
      are logged into in ego lite and never sends, replies, or deletes anything.
      Log into Gmail in ego lite once before enabling it.
    - `email_address` — the address the ATS will send codes to.
+   - `decide_model` — `llm` (default), `shadow`, or `laya`: whether the local
+     decision model takes part in form filling (next section). Missing key = `llm`.
 
    Skipping email access only means jobs that require a code are recorded as
    blocked.
+
+## Local decision model (optional)
+
+Form fields are resolved by rules and a cache first; what is left goes to the
+model. With [Laya](https://github.com/convaiinnovations/laya) (Apache 2.0, ~420 MB,
+runs on an Apple-silicon GPU) those leftover fields can be decided locally in about
+a second per page instead of an LLM round trip. It is optional — without it the
+skill works exactly as before.
+
+```
+/opt/homebrew/bin/python3.12 -m venv ~/job-search/.venv-laya      # 3.12: torch has no 3.14 wheel yet
+~/job-search/.venv-laya/bin/pip install "laya[serve]"
+```
+
+The scripts start `laya-serve` on `127.0.0.1:8765` on first use and keep it running
+(log: `data/laya/serve.log`). Then set `decide_model` in `settings.csv`:
+
+- `shadow` — the model predicts every field but nothing is acted on; each prediction
+  and the decision actually taken are appended to `data/decide_shadow.jsonl`. Run this
+  for a while first; the zero-shot checkpoint is not accurate enough to trust.
+- `laya` — predictions are adopted when confident (≥ 0.85 also cached in
+  `field_rules.csv`; 0.60–0.85 adopted for this page only; below that the LLM decides).
+  Never for free text, EEO, or anything on `never_guess`.
+
+`python3 skills/auto-apply/scripts/laya_eval.py report` prints the agreement rate
+and confidence distribution from the shadow log; switch to `laya` once agreement is
+≥ 90 % over ≥ 50 pages with under 2 % high-confidence errors. `laya_eval.py train`
+fine-tunes the checkpoint on the shadow log (`data/laya/checkpoint`, picked up on the
+next server start as model `autoapply-ft`).
 
 ## Starting a run
 
@@ -78,7 +109,7 @@ freshness window, free-text requirements, default result count), then say
 |---|---|
 | `skills/auto-apply/SKILL.md` | The skill: contract, boundaries, run loop |
 | `skills/auto-apply/references/` | `blockers.md` (states, confirmation rule, blocker procedures), `ats-notes.md` (per-ATS facts), `page-loop.md` (per-page fill loop), `dashboard.md`, `setup.md` |
-| `skills/auto-apply/scripts/` | The page loop — `walker.js` (page → fields), `decide.py` (field → source, rule cache), `driver.js` (fill + readback), `formfill.js` (entry point run inside `ego-browser nodejs`); `fixtures/form.html` test form; `seen.py` dedupe/canonicalisation |
+| `skills/auto-apply/scripts/` | The page loop — `walker.js` (page → fields), `decide.py` (field → source, rule cache), `laya_client.py` / `laya_eval.py` (local decision model, shadow log, fine-tuning), `driver.js` (fill + readback), `formfill.js` (entry point run inside `ego-browser nodejs`); `fixtures/form.html` test form; `seen.py` dedupe/canonicalisation |
 | `skills/auto-apply/templates/` | Profile template and the CSV schemas copied into `~/job-search/data/` on first run |
 | `agents/` | `email-code-reader`, `job-searcher` |
 
