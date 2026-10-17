@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Test page for search.js (ca.indeed.com/viewjob?jk=…). jk ending in 003 is expired;
+     jk ending in an odd digit applies on the company site, even → "Apply now" on Indeed. -->
+<html><head><meta charset="utf-8"><title>Software Developer - Maple Labs - Toronto, ON</title>
+<style> body { font-family: system-ui, sans-serif; margin: 0 16px; } </style></head>
+<body>
+<script>
+(function () {
+  var m = location.search.match(/jk=([0-9a-f]+)/);
+  var jk = m ? m[1] : '';
+  var n = Number(jk.slice(-3)) || 0;
+  if (jk.slice(-3) === '003') {
+    document.body.innerHTML = '<main><p>This job has expired on Indeed</p><p>' + new Array(8).join('Browse similar jobs. ') + '</p></main>';
+    return;
+  }
+  var external = n % 2 === 1;
+  document.body.innerHTML = '<div data-testid="viewjob-main-content">' +
+    '<h1 data-testid="jobsearch-JobInfoHeader-title">Software Developer ' + n + '</h1>' +
+    '<div data-testid="inlineHeader-companyName">Maple Labs ' + (n % 3) + '</div>' +
+    '<div data-testid="inlineHeader-companyLocation">Toronto, ON</div>' +
+    '<div id="salaryInfoAndJobType">$95,000–$120,000 a year - Full-time</div>' +
+    '<button>' + (external ? 'Apply on company site' : 'Apply now') + '</button>' +
+    '<div id="jobDescriptionText"><p>Maple Labs builds tooling for Canadian clinics. We need a developer with 3+ years of TypeScript, React and Python (Django) experience; AWS a plus.' +
+    (n % 4 === 0 ? ' Experience with LLM applications (RAG, embeddings) is a strong asset.' : '') + '</p><p>Benefits: extended health, 4 weeks vacation. Equal opportunity employer.</p></div>' +
+    '</div>';
+})();
+</script>
+</body></html>

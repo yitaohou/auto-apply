@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Test page for search.js (ca.indeed.com/jobs results list).
+       ?q=…&l=…&start=N    start=0 → 10 cards (jk a1b2c3d4e000…), start=10 → 4 cards, later → none
+     Each page carries one phantom [data-jk] with a zero bounding box (the real list has one).
+     Body text is padded past 400 chars so an empty page is "no more results", not a block;
+     ?block=1 renders the short interstitial instead (structural block test). -->
+<html><head><meta charset="utf-8"><title>Software Engineer Jobs in Toronto, ON</title>
+<style> body { font-family: system-ui, sans-serif; margin: 0 16px; } li { padding: 8px 0; border-bottom: 1px solid #eee; list-style: none; } </style>
+</head>
+<body>
+<script>
+(function () {
+  var q = {};
+  location.search.slice(1).split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) q[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || ''); });
+  if (q.block) { document.body.innerHTML = '<p>Additional Verification Required</p>'; return; }
+  var start = Number(q.start || 0);
+  var n = start === 0 ? 10 : start === 10 ? 4 : 0;
+  var html = '<main><div id="mosaic-provider-jobcards"><ul>';
+  for (var i = 0; i < n; i++) {
+    var jk = 'a1b2c3d4e' + String(start + i).padStart(3, '0');
+    html += '<li><div class="job_seen_beacon"><a data-jk="' + jk + '" id="job_' + jk + '" aria-label="full details of Software Developer ' + (start + i) + '" href="/viewjob?jk=' + jk + '">' +
+      '<h2 class="jobTitle"><span id="jobTitle-' + jk + '">Software Developer ' + (start + i) + '</span></h2></a>' +
+      '<span data-testid="company-name">Maple Labs ' + (i % 3) + '</span> <div data-testid="text-location">Toronto, ON</div>' +
+      '<span data-testid="myJobsStateDate">Posted ' + (i % 4 + 1) + ' days ago</span></div></li>';
+  }
+  html += '<li><a data-jk="a1b2c3d4e999" style="display:block;width:0;height:0;overflow:hidden" aria-label="phantom"></a></li>';
+  html += '</ul></div></main><footer><p>' + new Array(12).join('Indeed helps people get jobs. Browse jobs by category, by company, by location, by title. ') + '</p></footer>';
+  document.body.innerHTML = html;
+})();
+</script>
+</body></html>

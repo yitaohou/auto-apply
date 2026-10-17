@@ -19,6 +19,8 @@ from pathlib import Path
 HOST, PORT = "127.0.0.1", 8765
 BASE_MODEL = "typed-decisions"
 FT_MODEL = "autoapply-ft"                 # name given to data/laya/checkpoint when it exists
+ML_MODEL = "multilingual"                 # laya-multilingual (mmBERT, 8K ctx) — classify.py's whole-JD model
+ML_MAX_LEN = 8192
 ADOPT_CACHE, ADOPT = 0.85, 0.60           # p ≥ 0.85 adopt + cache · 0.60–0.85 adopt, no cache · < 0.60 LLM
 MAX_OPTIONS_IN_STATE = 20
 
@@ -180,8 +182,11 @@ class LayaClient:
             if not exe:
                 self.error = "laya-serve not installed (README: Local decision model)"
                 return False
+            # LAYA_MAX_LOADED=3: typed-decisions + fine-tuned checkpoint + multilingual (classify.py)
+            # must all stay resident, else the server evicts one per request and reloads it (~18 s).
             env = dict(os.environ, LAYA_HOST=self.host, LAYA_PORT=str(self.port), LAYA_MODELS=BASE_MODEL,
-                       LAYA_DEFAULT_MODEL=BASE_MODEL, LAYA_LOG_LEVEL=os.environ.get("LAYA_LOG_LEVEL", "warning"))
+                       LAYA_DEFAULT_MODEL=BASE_MODEL, LAYA_LOG_LEVEL=os.environ.get("LAYA_LOG_LEVEL", "warning"),
+                       LAYA_MAX_LOADED=os.environ.get("LAYA_MAX_LOADED", "3"))
             ckpt = self.laya_dir / "checkpoint"
             if ckpt.is_dir():  # fine-tuned checkpoint (laya_eval.py train): registered and preloaded beside the base
                 env["LAYA_EXTRA_MODELS"] = json.dumps({FT_MODEL: str(ckpt)})
@@ -208,14 +213,22 @@ class LayaClient:
         return True
 
     # --- inference ---
-    def batch(self, states, questions):
-        """→ list (per state) of {qid: {choice, probabilities, confidence, answer_confidence}}; [] on failure."""
+    def batch(self, states, questions, model=None, max_len=None, timeout=120):
+        """→ list (per state) of {qid: {choice, p, entropy_conf, probabilities}}; [] on failure.
+
+        `model` overrides the routed checkpoint (classify.py asks for ML_MODEL — built-in models load
+        lazily on first request); `max_len` widens the per-request context up to the server's
+        LAYA_MAX_TOKEN_BUDGET (8192). noul answers add `noul` = P(true); score answers add `score`.
+        """
         if not self.ready or not states:
             return []
-        body = json.dumps({"states": states, "questions": questions, "model": self.model}).encode()
+        payload = {"states": states, "questions": questions, "model": model or self.model}
+        if max_len:
+            payload["max_len"] = int(max_len)
+        body = json.dumps(payload).encode()
         req = urllib.request.Request(self.base + "/v1/systemone/batch", data=body, headers={"content-type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=120) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 res = json.loads(r.read())
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
             self.error = f"laya batch failed: {e}"
@@ -224,8 +237,16 @@ class LayaClient:
         for item in res.get("results", []):
             ans = {}
             for qid, a in (item.get("answers") or {}).items():
-                ans[qid] = {"choice": a.get("choice"), "p": round(float(a.get("answer_confidence") or 0.0), 4),
-                            "entropy_conf": round(float(a.get("confidence") or 0.0), 4), "probabilities": a.get("probabilities")}
+                row = {"type": a.get("type"), "choice": a.get("choice"), "p": round(float(a.get("answer_confidence") or 0.0), 4),
+                       "entropy_conf": round(float(a.get("confidence") or 0.0), 4), "probabilities": a.get("probabilities")}
+                if a.get("type") == "noul":
+                    row["noul"] = round(float(a.get("noul") or 0.0), 4)
+                    row["choice"] = row["noul"] >= 0.5
+                    row["p"] = round(max(row["noul"], 1 - row["noul"]), 4)
+                elif a.get("type") == "score":
+                    row["score"] = a.get("score")
+                    row["p"] = row["p"] or row["entropy_conf"]
+                ans[qid] = row
             u = item.get("usage") or {}
             if u.get("truncated"):
                 ans["_truncated"] = True
