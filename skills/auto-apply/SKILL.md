@@ -35,7 +35,7 @@ Read these five BEFORE every run — skipping them causes duplicate applications
 
 | File | Purpose |
 |---|---|
-| `data/settings.csv` | `auto_submit` (on/off), `email_access` (off/read_only), `email_address`. User-edited only |
+| `data/settings.csv` | `auto_submit` (on/off), `email_access` (off/read_only), `email_address`, `decide_model` (llm/shadow/laya — the local model's role in `decide.py`; missing = llm). User-edited only |
 | `data/job_pool.csv` | Single source of truth for each job's status; one row per job — dedupe against it |
 | `data/automation_rules.csv` | Accumulated site rules: per-ATS confirmation criteria, email patterns, control quirks. Consult alongside `references/ats-notes.md` |
 | `data/blocker_queue.csv` | Retryable failures from earlier runs |
@@ -63,7 +63,7 @@ Write as you go: every attempt (including failures) appends to `application_log.
 The scripts are the executor (`references/page-loop.md` has the exact calls and JSON shapes); the model decides only what the scripts cannot. Per page, with `$JOB_DIR = ~/job-search/data/pages/<job_id>/`:
 
 1. `formfill.js` mode `walk` (inside `ego-browser nodejs`) → `fields.json` + a one-line-per-field table. Read the table; never re-snapshot the page to "double check".
-2. `decide.py decide --job-dir $JOB_DIR --company …` → `decisions.json`. `ask_user` non-empty → the page stops (`Needs user`, park, dashboard row). `flags: ai_prohibited` → `Skipped`. `fields.json.flags`: `closed` → `Skipped`; `login_wall`, `captcha` → blocker; `captcha_present` alone is noise.
+2. `decide.py decide --job-dir $JOB_DIR --company …` → `decisions.json`. `ask_user` non-empty → the page stops (`Needs user`, park, dashboard row). `flags: ai_prohibited` → `Skipped`. `fields.json.flags`: `closed` → `Skipped`; `login_wall`, `captcha` → blocker; `captcha_present` alone is noise. The local model (`decide_model`) runs inside this step; a `laya … unavailable` line is informational — the fields are simply marked `LLM`.
 3. Only if `llm[]` is non-empty: answer those fields — once, as one JSON file — from `candidate_profile.json` / `answer_bank.md` facts, then `decide.py merge --llm $JOB_DIR/llm.json`. Free text is short, factual, never a guessed fact, never climbing. Never answer a field the gate sent to `ASK_USER`.
 4. `formfill.js` mode `fill` → `results.json`. Every result is a readback — "option clicked AND the field reads back the expected value"; the driver already tried its two methods, so an `ok=false` gets at most **one** manual attempt from `references/ats-notes.md`, then it is a blocker. Never the same failing script three times.
 5. `formfill.js` mode `next` → the next page's `fields.json` (or the validation errors) → back to 2. On the last page, per `auto_submit`: `off` → park in front of the submit button; `on` → mode `submit`, which registers the wait before clicking and writes `submit.json` — that file is the evidence for the confirmation rule (`references/blockers.md` §2); `reason: timeout` with no matched text is `Pending confirmation`, not `Submitted`.

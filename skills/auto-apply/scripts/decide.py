@@ -10,12 +10,22 @@
         A value may also be a source string ("profile:candidate.city", "const:Yes", "option:2").
         Rewrites decisions.json with the values resolved and appends cacheable rows to data/field_rules.csv.
 
-Resolution order (model-independent): gate → seed rules → field_rules.csv cache → LLM marker.
+Resolution order (model-independent): gate → seed rules → field_rules.csv cache → Laya → LLM marker.
 The gate never guesses: never_guess labels are answered only from user-confirmed profile facts
-(by=rule) or sent to ASK_USER. No local model in this version (PR3 adds Laya between cache and LLM).
+(by=rule) or sent to ASK_USER.
+
+Local model (laya_client.py, `decide_model` in data/settings.csv or --model):
+    llm     (default) no local model; everything past the cache is marked LLM
+    shadow  Laya predicts every gated-through field; predictions are logged to data/decide_shadow.jsonl
+            with the label taken from the final decision (decide, then merge) — never acted on
+    laya    predictions are adopted between cache and LLM per the thresholds in laya_client.py
+            (p ≥ 0.85 adopt + cache by=laya · 0.60–0.85 adopt only · < 0.60 LLM); still logged
 """
 import argparse, csv, datetime as dt, json, os, re, sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import laya_client as laya  # noqa: E402
 
 DATA_DEFAULT = Path.home() / "job-search"
 FREE_TEXT_RE = re.compile(r"why|describe|tell us|cover letter|explain|what (interests|makes|excites)|motivat|anything else|additional information|comments|summary|about yourself|message", re.I)
@@ -94,6 +104,12 @@ class Ctx:
         self.rules = self._load_rules()
         self.resume_rules = self._load_csv(self.data / "data" / "resume_rules.csv")
         self.never_guess = [norm(x) for x in self.profile.get("never_guess", [])]
+        st = self._load_csv(self.data / "data" / "settings.csv")
+        self.settings = st[0] if st else {}
+
+    def decide_model(self, override=None):
+        m = (override or self.settings.get("decide_model") or "llm").strip().lower()
+        return m if m in ("llm", "shadow", "laya") else "llm"
 
     def _load_csv(self, p):
         try:
@@ -311,8 +327,8 @@ def decide_field(ctx, ats, f):
     ftype = f["type"]
     d = {"id": f["id"], "label": label, "type": ftype, "source": None, "by": None, "confidence": 0.0, "value": None}
 
-    def done(source, by, conf, note=None):
-        d.update(source=source, by=by, confidence=conf)
+    def done(source, by, conf, note=None, stage="gate"):
+        d.update(source=source, by=by, confidence=conf, stage=stage)
         if note:
             d["note"] = note
         return d
@@ -355,16 +371,16 @@ def decide_field(ctx, ats, f):
             seed_hit = source
             break
     if seed_hit == "ASK_USER":
-        return done("ASK_USER", None, 0.0, "seed rule")
+        return done("ASK_USER", None, 0.0, "seed rule", stage="seed")
     if seed_hit and seed_hit.startswith("LLM:"):
-        return done("LLM", None, 0.0, seed_hit[4:])
+        return done("LLM", None, 0.0, seed_hit[4:], stage="seed")
     if seed_hit:
         if seed_hit.startswith("profile:"):
             v = profile_virtual(ctx, seed_hit[8:])
             if v == "__none__":
                 v, err = ctx.resolve(seed_hit, f)
             if v is None or v == "":
-                return done("ASK_USER", None, 0.0, f"{seed_hit} empty in profile")
+                return done("ASK_USER", None, 0.0, f"{seed_hit} empty in profile", stage="seed")
         else:
             v, err = ctx.resolve(seed_hit, f)
         d["value"] = v
@@ -377,11 +393,11 @@ def decide_field(ctx, ats, f):
             if i < 0:
                 d["value"] = None
                 d["proposed"] = v
-                return done("LLM", None, 0.0, f"seed value {v!r} matches no option")
+                return done("LLM", None, 0.0, f"seed value {v!r} matches no option", stage="seed")
             d["value"] = f["options"][i]
         elif ftype == "checkbox":
             d["value"] = bool(v) if isinstance(v, bool) else str(v).lower() in ("yes", "true", "1", "on")
-        return done(seed_hit, "rule", 1.0)
+        return done(seed_hit, "rule", 1.0, stage="seed")
 
     # skill-years
     if re.search(r"years?( of)? (experience|exp)|how many years|experience \(years\)|yrs", ln):
@@ -399,9 +415,9 @@ def decide_field(ctx, ats, f):
             if i < 0:
                 d["proposed"] = d["value"]
                 d["value"] = None
-                return done("LLM", None, 0.0, "years value matches no option")
+                return done("LLM", None, 0.0, "years value matches no option", stage="years")
             d["value"] = f["options"][i]
-        return done(src, "rule", 1.0 if hit else 0.8, None if hit else "skill not listed → 2 years (user rule)")
+        return done(src, "rule", 1.0 if hit else 0.8, None if hit else "skill not listed → 2 years (user rule)", stage="years")
 
     # never_guess with no confirmed fact → ASK_USER
     for key, pat in NEVER_GUESS_PATTERNS.items():
@@ -423,11 +439,126 @@ def decide_field(ctx, ats, f):
                 d["value"] = v
                 r["hits"] = str(int(r.get("hits") or 0) + 1)
                 r["last_used"] = ctx.today
-                return done(r["source"], r.get("by") or "rule", 0.95, "field_rules cache")
+                return done(r["source"], r.get("by") or "rule", 0.95, "field_rules cache", stage="cache")
 
-    # 3. (local model — not in this version)
+    # 3. local model — cmd_decide runs laya_step() over the page after this pass (needs one batch per page)
     # 4. LLM marker
-    return done("LLM", None, 0.0, "free text" if FREE_TEXT_RE.search(ln) else None)
+    return done("LLM", None, 0.0, "free text" if FREE_TEXT_RE.search(ln) else None, stage="open")
+
+
+# ---------- local model (step 3) ----------
+def resolve_source(ctx, source, f):
+    """source → value through the seed-rule virtual keys, then Ctx.resolve. (None, err) when empty."""
+    if source.startswith("profile:"):
+        v = profile_virtual(ctx, source[8:])
+        if v != "__none__":
+            return (v, None) if v not in (None, "") else (None, f"{source} empty in profile")
+    v, err = ctx.resolve(source, f)
+    return (v, err) if v not in (None, "") else (None, err or f"{source} empty")
+
+
+def fit_value(ctx, f, v):
+    """Shape a resolved value for the control: today for 'immediately' dates, bool for checkboxes,
+    option text for listed options (Yes/No aware). Returns (value, matched) — matched False = no option fits."""
+    ftype = f["type"]
+    if ftype == "date" and not re.match(r"^\d{4}-\d{2}", str(v)) and re.search(r"immediate|asap|now|any ?time", str(v), re.I):
+        return ctx.today, True
+    if ftype == "checkbox":
+        return (v if isinstance(v, bool) else str(v).lower() in ("yes", "true", "1", "on")), True
+    if ftype in ("select", "radio", "multiselect") and f.get("options"):
+        i = yes_no_option(f["options"], v)
+        if i < 0:
+            i = match_option(f["options"], v)
+        return (f["options"][i], True) if i >= 0 else (v, False)
+    return v, True
+
+
+def _note(d, text):
+    d["note"] = (d["note"] + "; " + text) if d.get("note") else text
+
+
+def laya_adopt(ctx, ats, f, d, pred, client, summary):
+    """mode=laya: turn one prediction into a decision for an `open` field (else leave it LLM)."""
+    q1 = pred.get("q1") or {}
+    cat, p1 = q1.get("choice"), float(q1.get("p") or 0)
+    tag = f"laya {cat} p1={p1:.2f}"
+    if not cat or p1 < laya.ADOPT:
+        return _note(d, tag + " → LLM")
+    if f["type"] == "textarea" and FREE_TEXT_RE.search(norm(f.get("label"))):
+        return _note(d, tag + " → free text stays LLM")
+    if cat == "g_eeo":
+        d.update(source="ASK_USER", by="laya", value=None, confidence=p1)
+        return _note(d, tag + " → EEO without a decline option")
+    if cat in ("h_free_text", "j_other"):
+        return _note(d, tag + " → LLM")
+    if cat == "e_skill_years":
+        hit = ctx.years_for(f["label"])
+        source, p2 = (f"profile:skills_experience_years.{hit[1]}" if hit else "const:2"), p1
+        if not hit:
+            tag += " (skill not listed → 2 years, user rule)"
+    else:
+        q2 = pred.get("q2") or {}
+        key, p2 = q2.get("choice"), float(q2.get("p") or 0)
+        tag += f" {key} p2={p2:.2f}"
+        if not key or key == "NONE" or p2 < laya.ADOPT:
+            return _note(d, tag + " → LLM")
+        source = laya.source_for(cat, key)
+        if not source:
+            return _note(d, tag + " → LLM")
+    if source == "ASK_USER":
+        d.update(source="ASK_USER", by="laya", value=None, confidence=min(p1, p2))
+        return _note(d, tag)
+    if source.startswith("LLM:"):
+        return _note(d, tag + " → " + source[4:])
+    v, err = resolve_source(ctx, source, f)
+    if v is None:
+        d.update(source="ASK_USER", by="laya", value=None, confidence=min(p1, p2))
+        return _note(d, tag + f" → {err}")
+    v, ok = fit_value(ctx, f, v)
+    if not ok:  # Q3: let the model pick the option; below threshold the skill chooses (proposed value kept)
+        i, p3 = client.option_match(pred["state"], v, f["options"])
+        if i < 0 or p3 < laya.ADOPT_CACHE:
+            d["proposed"] = v
+            return _note(d, tag + f" → value {v!r} matches no option (q3 p={p3:.2f})")
+        v = f["options"][i]
+        tag += f" q3={p3:.2f}"
+    conf = min(p1, p2)
+    d.update(source=source, by="laya", value=v, confidence=conf)
+    _note(d, tag)
+    summary["adopted"] += 1
+    ln = norm(f.get("label"))
+    if conf >= laya.ADOPT_CACHE and not FREE_TEXT_RE.search(ln) and not EEO_RE.search(ln) and len(str(v)) <= 120:
+        ctx.rules[(ats, ln, f["type"])] = {"ats": ats, "label_norm": ln, "type": f["type"], "source": source, "by": "laya", "hits": "1", "last_used": ctx.today}
+        summary["cached"] += 1
+
+
+def shadow_meta(ctx, ats, jd, d, mode, model=None):
+    return {"ats": ats, "label": d.get("label"), "type": d.get("type"), "job_dir": str(jd), "id": d["id"], "mode": mode, "model": model,
+            "final_source": d.get("source"), "by": d.get("by"), "stage": d.get("stage"), "at": ctx.today}
+
+
+def laya_step(ctx, ats, page, fields, decisions, mode, jd, log=print):
+    """mode ∈ shadow|laya. One Q1 batch (+ one Q2 batch per class) over every field that passed the gate.
+    laya: adopt for `open` fields. Both modes: write $JOB_DIR/laya.json and append labelled rows to
+    data/decide_shadow.jsonl for the fields whose decision is final now (LLM-marked ones are labelled by merge)."""
+    by_id = {f["id"]: f for f in fields}
+    cand = [by_id[d["id"]] for d in decisions if d.get("stage") in ("seed", "years", "cache", "open")]
+    client = laya.LayaClient(ctx.data, log=log)
+    summary = {"mode": mode, "ready": client.ready, "model": client.model, "error": client.error, "fields": len(cand), "adopted": 0, "cached": 0, "logged": 0}
+    preds = client.predict_fields(ats, page, cand) if client.ready else {}
+    if preds:
+        if mode == "laya":
+            for d in decisions:
+                if d.get("stage") == "open" and d["id"] in preds:
+                    laya_adopt(ctx, ats, by_id[d["id"]], d, preds[d["id"]], client, summary)
+        rows = []  # labels come only from rules, the cache and the skill — never from Laya's own picks
+        for d in decisions:
+            if d["id"] in preds and d["source"] != "LLM" and d.get("by") != "laya":
+                rows += laya.shadow_rows(d, preds[d["id"]], shadow_meta(ctx, ats, jd, d, mode, client.model))
+        summary["logged"] = laya.append_shadow(ctx.data, rows)
+    summary["error"] = client.error
+    (jd / "laya.json").write_text(json.dumps({"summary": summary, "preds": preds}, indent=1, ensure_ascii=False))
+    return summary
 
 
 def cmd_decide(a):
@@ -436,6 +567,8 @@ def cmd_decide(a):
     fields = load_json(jd / "fields.json")
     ats = fields.get("ats", "generic")
     decisions = [decide_field(ctx, ats, f) for f in fields["fields"]]
+    mode = ctx.decide_model(a.model)
+    laya_summary = laya_step(ctx, ats, fields.get("page"), fields["fields"], decisions, mode, jd) if mode != "llm" else None
     by_id = {f["id"]: f for f in fields["fields"]}
     llm = [{k: by_id[d["id"]].get(k) for k in ("id", "label", "type", "required", "help", "options", "current")} | ({"proposed": d["proposed"]} if d.get("proposed") else {}) | ({"note": d["note"]} if d.get("note") else {})
            for d in decisions if d["source"] == "LLM"]
@@ -445,11 +578,17 @@ def cmd_decide(a):
         "ask_user": [{"id": d["id"], "label": d["label"], "note": d.get("note")} for d in decisions if d["source"] == "ASK_USER"],
         "llm": llm,
         "flags": sorted({"ai_prohibited" for d in decisions if (d.get("note") or "").startswith("posting bars AI")}),
+        "decide_model": mode,
     }
+    if laya_summary:
+        out["laya"] = laya_summary
     (jd / "decisions.json").write_text(json.dumps(out, indent=1, ensure_ascii=False))
     ctx.save_rules()
     n = len(decisions)
     print(f"decide: {n} fields → {sum(1 for d in decisions if d['value'] is not None)} resolved, {len(out['ask_user'])} ASK_USER, {len(llm)} LLM" + (f"; FLAGS: {', '.join(out['flags'])}" if out["flags"] else ""))
+    if laya_summary:
+        ls = laya_summary
+        print(f"laya ({mode}): " + (f"{ls['model']} on {ls['fields']} fields, {ls['adopted']} adopted, {ls['cached']} cached, {ls['logged']} shadow rows" if ls["ready"] else f"unavailable — {ls['error']} (fields marked LLM)"))
     for d in decisions:
         v = d["value"]
         vs = (json.dumps(v, ensure_ascii=False)[:50] if v is not None else "-")
@@ -507,7 +646,17 @@ def cmd_merge(a):
     dec["ask_user"] = [{"id": d["id"], "label": d["label"], "note": d.get("note")} for d in dec["decisions"] if d["source"] == "ASK_USER"]
     (jd / "decisions.json").write_text(json.dumps(dec, indent=1, ensure_ascii=False))
     ctx.save_rules()
-    print(f"merge: {merged} LLM answers applied; {len(dec['llm'])} still LLM; {len(dec['ask_user'])} ASK_USER; rules file {ctx.rules_path} ({len(ctx.rules)} rows)")
+    # shadow rows for the fields the skill just answered (their Laya predictions were saved by decide)
+    logged = 0
+    lj = load_json(jd / "laya.json", {})
+    if lj.get("preds"):
+        mode, model = dec.get("decide_model", "llm"), (lj.get("summary") or {}).get("model")
+        rows = []
+        for d in dec["decisions"]:
+            if d["id"] in answers and d["id"] in lj["preds"] and d["source"] != "LLM":
+                rows += laya.shadow_rows(d, lj["preds"][d["id"]], shadow_meta(ctx, ats, jd, d, mode, model))
+        logged = laya.append_shadow(ctx.data, rows)
+    print(f"merge: {merged} LLM answers applied; {len(dec['llm'])} still LLM; {len(dec['ask_user'])} ASK_USER; rules file {ctx.rules_path} ({len(ctx.rules)} rows)" + (f"; {logged} shadow rows" if logged else ""))
     return 0
 
 
@@ -520,6 +669,7 @@ def main(argv=None):
         p.add_argument("--data", default=str(DATA_DEFAULT), help="~/job-search")
         p.add_argument("--company", default="")
         p.add_argument("--today", default=None)
+        p.add_argument("--model", choices=["llm", "shadow", "laya"], default=None, help="override settings.csv decide_model")
         if name == "merge":
             p.add_argument("--llm", required=True, help="JSON file with the skill's answers for LLM-marked fields")
         p.set_defaults(fn=fn)

@@ -1,6 +1,6 @@
 # Page loop — walker → decide → driver
 
-**Status: implemented** (`scripts/walker.js`, `scripts/driver.js`, `scripts/formfill.js`, `scripts/decide.py`). The scripts are the executor; the skill only answers the fields they mark `LLM` and handles `ASK_USER` / failures as blockers. Never fill a page by hand while the scripts can walk it.
+**Status: implemented** (`scripts/walker.js`, `scripts/driver.js`, `scripts/formfill.js`, `scripts/decide.py`, `scripts/laya_client.py`). The scripts are the executor; the skill only answers the fields they mark `LLM` and handles `ASK_USER` / failures as blockers. Never fill a page by hand while the scripts can walk it.
 
 ## Why
 
@@ -12,7 +12,8 @@ Every job has a page directory `$JOB_DIR = ~/job-search/data/pages/<job_id>/` (j
 
 ```
 formfill.js walk      → $JOB_DIR/fields.json      perception
-decide.py decide      → $JOB_DIR/decisions.json   gate → seed rules → cache → LLM markers
+decide.py decide      → $JOB_DIR/decisions.json   gate → seed rules → cache → local model → LLM markers
+                        $JOB_DIR/laya.json        the model's predictions (only when decide_model ≠ llm)
 [llm non-empty]       skill writes $JOB_DIR/llm.json, then decide.py merge
 formfill.js fill      → $JOB_DIR/results.json     execution + readback
 formfill.js next      → fields.json of the next page (or validation errors)   — repeat
@@ -69,7 +70,7 @@ source ∈ profile:<path> | answer:<slug> | const:<value> | option:<index> | opt
 by     ∈ rule | laya | llm | user
 ```
 
-`decisions.json`: `{ats, url, company, decided_at, decisions[], ask_user[{id,label,note}], llm[{id,label,type,required,help,options,current,proposed?,note?}], flags[]}`.
+`decisions.json`: `{ats, url, company, decided_at, decide_model, decisions[], ask_user[{id,label,note}], llm[{id,label,type,required,help,options,current,proposed?,note?}], flags[], laya?}`. Each decision also carries `stage` (`gate | seed | years | cache | open`) — `open` means nothing deterministic matched.
 
 Resolution order (`decide.py decide`, model-independent):
 
@@ -77,8 +78,16 @@ Resolution order (`decide.py decide`, model-independent):
 1. **Seed rules** — regex label → user-confirmed profile fact (`profile:` virtual keys `candidate.first_name/last_name/province_name`, `work_authorization.answer_yes/sponsorship_no`, `background.background_check_consent_yes`); skill-years labels → `skills_experience_years.<skill>` else `const:2`; salary → `LLM:` with the "use the JD figure" note; "available immediately" dates → today.
 2. **`never_guess`** keyword with no seed hit → `ASK_USER`. Nothing on that list reaches a model.
 3. **Rule cache** `data/field_rules.csv` (`ats,label_norm,type,source,by,hits,last_used`; `ats=*` matches every ATS) → use it, bump `hits`/`last_used`.
-4. **Local model** (PR3, Laya) — absent in this version.
+4. **Local model** (`laya_client.py`, only when `settings.csv decide_model` is `shadow` or `laya`; `--model` overrides). One field = one state (ATS, page title, label, type/kind, required, help, options — ≤ 250 tokens); one `POST /v1/systemone/batch` per page for Q1, one per predicted class for Q2:
+   - Q1 class, 10 options: `a_contact b_legal c_education d_work e_skill_years f_preference g_eeo h_free_text i_compliance j_other`.
+   - Q2 key inside the class (≤ 15 + `NONE`), each key bound to a source in `laya_client.KEYS`; `e` takes the skill from the label (`years_for`), `g` → `ASK_USER`, `h`/`j` → `LLM`.
+   - Q3 (only when the code matcher fails) picks the option closest to the resolved value.
+   - `laya`: for `open` fields, p₁ and p₂ ≥ 0.85 → adopt + cache `by=laya`; 0.60–0.85 → adopt, no cache; below → `LLM`. Never adopts for textareas matching the free-text regex, never for a never_guess label (those never reach this step). `shadow`: nothing adopted; the summary line reads `laya (shadow): … 0 adopted`.
+   - Both modes append `laya-train` rows to `data/decide_shadow.jsonl`: `{state, questions, expected, meta}` where `expected` is the class/key implied by the decision finally taken — from the rule, the cache, or the skill's `merge` (never from the model's own pick). Only decisions with an unambiguous label are logged.
+   - The server (`~/job-search/.venv-laya/bin/laya-serve`, `127.0.0.1:8765`) is started on demand and stays up; `data/laya/checkpoint` (from `laya_eval.py train`) is registered as `autoapply-ft` and preferred. If the server cannot start, the summary says `unavailable` and the fields fall through to the LLM marker — never a blocker.
 5. **`LLM` marker.** Free text gets `note: free text`.
+
+`laya_eval.py report` — agreement and confidence buckets from the shadow log; `rules` — the same against `field_rules.csv` rows; `export` / `train` — fine-tuning rows and the `laya-train` wrapper. Switch-over rule (plan): ≥ 50 pages, agreement ≥ 90 %, high-confidence errors < 2 %.
 
 **The skill's LLM step** (`merge`): answer only the `llm[]` entries, once per page, into `llm.json` — `{"f3": "value", "f7": {"value": "...", "cache": false}}`; a value may be a source string (`profile:candidate.city`, `const:Yes`, `option:2`). Free text comes from `answer_bank.md` facts, short, never climbing, never a guessed fact. `merge` resolves the values, rewrites `decisions.json`, and caches `by=llm` rows except free text, EEO, and values over 120 characters.
 
