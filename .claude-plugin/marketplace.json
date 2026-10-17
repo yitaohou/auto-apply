@@ -8,7 +8,7 @@
     {
       "name": "auto-apply",
       "source": "./",
-      "description": "Semi-automated ATS job application workflow with pluggable capability providers."
+      "description": "Semi-automated ATS job application workflow for Claude Code, driven by ego-browser."
     }
   ]
 }
