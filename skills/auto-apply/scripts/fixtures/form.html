@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fixture — Software Developer application</title>
+<style>
+  body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; }
+  .field { margin: 0.8rem 0; }
+  label { display: block; font-weight: 600; }
+  .help { font-size: 0.85em; color: #555; }
+  .hp { position: absolute; left: -9999px; }
+  .rs-control { border: 1px solid #999; padding: 4px; min-height: 28px; position: relative; }
+  .rs-menu { border: 1px solid #999; background: #fff; position: absolute; z-index: 5; width: 100%; }
+  .rs-menu [role=option] { padding: 4px; cursor: pointer; }
+  .rs-menu [role=option]:hover { background: #ddf; }
+  .pill { background: #cde; padding: 2px 6px; margin-right: 4px; }
+  .error { color: #b00; }
+  #done { display: none; }
+</style>
+</head>
+<body>
+<h1>Software Developer — Toronto</h1>
+<div id="progress">Step 1 of 2</div>
+<form id="app" onsubmit="return false">
+
+  <!-- honeypot -->
+  <div class="hp"><label for="beecatcher">Leave blank</label><input id="beecatcher" name="beecatcher"></div>
+  <input type="text" name="nickname_hpcsaf" style="display:none">
+
+  <!-- plain inputs -->
+  <div class="field"><label for="first">First Name <span aria-hidden="true">*</span></label>
+    <input id="first" name="first_name" required></div>
+  <div class="field"><label for="last">Last Name *</label><input id="last" name="last_name" required></div>
+  <div class="field"><label for="email">Email</label><input id="email" type="email" name="email" required
+    aria-describedby="email-help"><div id="email-help" class="help">We will send a confirmation here</div></div>
+  <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" name="phone" placeholder="+1 ..."></div>
+
+  <!-- aria-label only -->
+  <div class="field"><input aria-label="LinkedIn Profile" name="linkedin" type="url"></div>
+
+  <!-- textarea -->
+  <div class="field"><label for="why">Why do you want to join us?</label>
+    <textarea id="why" name="why" rows="3"></textarea></div>
+
+  <!-- native select -->
+  <div class="field"><label for="country">Country of residence *</label>
+    <select id="country" name="country" required>
+      <option value="">Select...</option>
+      <option value="US">United States</option>
+      <option value="CA">Canada</option>
+      <option value="GB">United Kingdom</option>
+    </select></div>
+
+  <!-- hidden native select (select2-style overlay) -->
+  <div class="field"><label for="hear">How did you hear about us?</label>
+    <select id="hear" name="hear" style="display:none">
+      <option value="">--</option><option>Indeed</option><option>LinkedIn</option><option>Referral</option>
+    </select><span class="select2-overlay">--</span></div>
+
+  <!-- radio group -->
+  <div class="field"><fieldset><legend>Are you legally authorized to work in Canada? *</legend>
+    <label><input type="radio" name="auth" value="yes" required> Yes</label>
+    <label><input type="radio" name="auth" value="no"> No</label></fieldset></div>
+
+  <!-- checkbox group -->
+  <div class="field"><fieldset><legend>Preferred work arrangement</legend>
+    <label><input type="checkbox" name="arr" value="remote"> Remote</label>
+    <label><input type="checkbox" name="arr" value="hybrid"> Hybrid</label>
+    <label><input type="checkbox" name="arr" value="onsite"> On-site</label></fieldset></div>
+
+  <!-- single checkbox -->
+  <div class="field"><label><input type="checkbox" name="consent" id="consent"> I consent to a background check *</label></div>
+
+  <!-- date -->
+  <div class="field"><label for="start">Available start date</label><input id="start" type="date" name="start"></div>
+
+  <!-- file -->
+  <div class="field"><label for="resume">Resume/CV *</label><input id="resume" type="file" name="resume" required>
+    <span id="resume-name"></span></div>
+
+  <!-- react-select lookalike (Greenhouse) -->
+  <div class="field"><label id="prov-label">Province</label>
+    <div class="select__container">
+      <div class="rs-control select__control" id="prov-control">
+        <span class="select__single-value" id="prov-value"></span>
+        <input class="select__input" id="prov" role="combobox" aria-labelledby="prov-label"
+               aria-autocomplete="list" aria-expanded="false" autocomplete="off">
+      </div>
+      <div class="rs-menu select__menu" id="prov-menu" style="display:none"></div>
+    </div></div>
+
+  <!-- workday-style prompt -->
+  <div class="field"><label id="src-label">Source</label>
+    <div data-automation-id="formField-source">
+      <div data-automation-id="selectedItemList" id="src-pills"></div>
+      <input id="src" data-automation-id="searchBox" aria-labelledby="src-label" type="text" autocomplete="off">
+      <div data-automation-id="promptOptionList" id="src-list" style="display:none"></div>
+    </div></div>
+
+  <!-- workday-style button select -->
+  <div class="field"><label id="deg-label">Degree</label>
+    <button type="button" id="deg" aria-haspopup="listbox" aria-labelledby="deg-label" data-automation-id="degree">Select One</button>
+    <ul id="deg-menu" role="listbox" style="display:none">
+      <li role="option">Bachelors</li><li role="option">Masters</li><li role="option">PhD</li></ul></div>
+
+  <!-- workday-style spin date -->
+  <div class="field"><label id="grad-label">Graduation date</label>
+    <div data-automation-id="dateInputWrapper" aria-labelledby="grad-label">
+      <div role="spinbutton" tabindex="0" data-automation-id="dateSectionMonth-input" aria-valuetext="MM" contenteditable="true">MM</div>/
+      <div role="spinbutton" tabindex="0" data-automation-id="dateSectionYear-input" aria-valuetext="YYYY" contenteditable="true">YYYY</div>
+    </div></div>
+
+  <!-- shadow DOM text input -->
+  <div class="field"><label id="gh-label">GitHub URL</label><shadow-host id="ghost"></shadow-host></div>
+
+  <div id="errors"></div>
+  <button type="button" id="next">Next</button>
+  <button type="button" id="save">Save for later</button>
+</form>
+
+<div id="page2" style="display:none">
+  <h2>Review</h2>
+  <div id="progress2">Step 2 of 2</div>
+  <div class="field"><label><input type="checkbox" id="certify"> I certify the above is accurate *</label></div>
+  <button type="button" id="submit">Submit Application</button>
+</div>
+
+<div id="done"><h2>Thank you for applying!</h2><p>Your application has been received.</p></div>
+
+<script>
+  // shadow host
+  const host = document.getElementById('ghost'); const sr = host.attachShadow({mode:'open'});
+  sr.innerHTML = '<input id="gh" aria-labelledby="gh-label" type="url">';
+
+  // file name readout
+  document.getElementById('resume').addEventListener('change', e => {
+    document.getElementById('resume-name').textContent = e.target.files[0] ? e.target.files[0].name : '';
+  });
+
+  // react-select lookalike: typing opens menu with filtered options; mousedown on option selects
+  const PROVS = ['Alberta','British Columbia','Manitoba','Ontario','Quebec'];
+  const provInput = document.getElementById('prov'), provMenu = document.getElementById('prov-menu');
+  function renderProv() {
+    const q = provInput.value.toLowerCase();
+    provMenu.innerHTML = PROVS.filter(p => p.toLowerCase().includes(q))
+      .map((p,i) => `<div role="option" id="prov-option-${i}" class="select__option">${p}</div>`).join('') || '<div>No options</div>';
+    provMenu.style.display = 'block'; provInput.setAttribute('aria-expanded','true');
+  }
+  provInput.addEventListener('focus', renderProv); provInput.addEventListener('input', renderProv);
+  provMenu.addEventListener('mousedown', e => { if (e.target.role === 'option' || e.target.getAttribute('role') === 'option') {
+    document.getElementById('prov-value').textContent = e.target.textContent; provInput.value = '';
+    provMenu.style.display = 'none'; provInput.setAttribute('aria-expanded','false'); } });
+  provInput.addEventListener('keydown', e => { if (e.key === 'Escape') { provMenu.style.display = 'none'; }
+    if (e.key === 'Enter') { const o = provMenu.querySelector('[role=option]'); if (o) o.dispatchEvent(new MouseEvent('mousedown', {bubbles:true})); } });
+
+  // workday prompt lookalike: Enter after typing shows promptOptions; full pointer sequence required
+  const SRCS = ['Indeed','LinkedIn','Glassdoor','Company Website'];
+  const srcInput = document.getElementById('src'), srcList = document.getElementById('src-list');
+  srcInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault();
+    const q = srcInput.value.toLowerCase();
+    srcList.innerHTML = SRCS.filter(s => s.toLowerCase().includes(q)).map(s => `<div data-automation-id="promptOption" tabindex="0">${s}</div>`).join('');
+    srcList.style.display = 'block'; } });
+  let seq = {};
+  srcList.addEventListener('pointerdown', e => { seq = {pd: e.target}; });
+  srcList.addEventListener('mousedown', e => { if (seq.pd === e.target) seq.md = true; });
+  srcList.addEventListener('click', e => { const t = e.target; if (seq.pd === t && seq.md && t.dataset.automationId === 'promptOption') {
+    document.getElementById('src-pills').innerHTML = `<span class="pill" data-automation-id="selectedItem">${t.textContent}</span>`;
+    srcInput.value = ''; srcList.style.display = 'none'; } });
+
+  // button select
+  const deg = document.getElementById('deg'), degMenu = document.getElementById('deg-menu');
+  deg.addEventListener('click', () => { degMenu.style.display = degMenu.style.display === 'none' ? 'block' : 'none'; });
+  degMenu.addEventListener('click', e => { if (e.target.getAttribute('role') === 'option') { deg.textContent = e.target.textContent; degMenu.style.display = 'none'; } });
+
+  // spinbuttons: keystrokes replace content
+  document.querySelectorAll('[role=spinbutton]').forEach(sb => {
+    sb.addEventListener('focus', () => { sb._buf = ''; });
+    sb.addEventListener('keydown', e => { if (/^\d$/.test(e.key)) { e.preventDefault(); sb._buf = (sb._buf || '') + e.key;
+      sb.textContent = sb._buf; sb.setAttribute('aria-valuetext', sb._buf); } });
+  });
+
+  // next: validate required, go to page 2
+  document.getElementById('next').addEventListener('click', () => {
+    const errs = [];
+    if (!document.getElementById('first').value) errs.push('First Name is required');
+    if (!document.getElementById('country').value) errs.push('Country of residence is required');
+    if (!document.querySelector('input[name=auth]:checked')) errs.push('Work authorization is required');
+    const box = document.getElementById('errors');
+    box.innerHTML = errs.map(e => `<div class="error" role="alert">${e}</div>`).join('');
+    if (errs.length) return;
+    document.getElementById('app').style.display = 'none'; document.getElementById('page2').style.display = 'block';
+    document.getElementById('progress').textContent = 'Step 2 of 2';
+  });
+  document.getElementById('submit').addEventListener('click', () => {
+    setTimeout(() => { document.getElementById('page2').style.display = 'none'; document.getElementById('done').style.display = 'block';
+      history.pushState({}, '', location.pathname + '#confirmation'); }, 800);
+  });
+</script>
+</body>
+</html>

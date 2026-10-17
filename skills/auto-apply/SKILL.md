@@ -35,15 +35,15 @@ Read these five BEFORE every run — skipping them causes duplicate applications
 
 | File | Purpose |
 |---|---|
-| `data/settings.csv` | `auto_submit` (on/off), `email_access` (off/read_only), `email_address`. User-edited only |
+| `data/settings.csv` | `auto_submit` (on/off), `email_access` (off/read_only), `email_address`, `decide_model` (llm/shadow/laya — the local model's role in `decide.py`; missing = llm). User-edited only |
 | `data/job_pool.csv` | Single source of truth for each job's status; one row per job — dedupe against it |
 | `data/automation_rules.csv` | Accumulated site rules: per-ATS confirmation criteria, email patterns, control quirks. Consult alongside `references/ats-notes.md` |
 | `data/blocker_queue.csv` | Retryable failures from earlier runs |
-| `queue.txt` | Input, one job per line: a bare URL or a JSON object (`url,title,company,location,…`). Append-only — never rewrite, reorder, or delete lines |
+| `queue.txt` | Input, one job per line: a bare URL or a JSON object (`url,title,company,location,level,tier,score` — what `classify.py queue` writes). Append-only — never rewrite, reorder, or delete lines |
 
 `data/.tripwire.json` holds the Sent-folder tripwire baseline (Run loop steps 1 and 4); it stores only a sent time and subject, never a code or credential.
 
-Read when needed: `candidate_profile.json` and `answer_bank.md` before filling any form; `data/resume_rules.csv` when choosing a résumé; `data/application_log.csv` for history; `data/search_profile.csv` when the user asks for a search (user-edited only, never derived from the profile); `data/field_rules.csv` — cached label → source decisions (`references/page-loop.md`).
+Read when needed: `candidate_profile.json` and `answer_bank.md` before filling any form; `data/resume_rules.csv` when choosing a résumé; `data/application_log.csv` for history; `data/search_profile.csv` when the user asks for a search (user-edited only, never derived from the profile; `data/search_overrides.csv` — `id,tier,note` — pins a posting's tier when the user overrules the ranking); `data/field_rules.csv` — cached label → source decisions (`references/page-loop.md`).
 
 Write as you go: every attempt (including failures) appends to `application_log.csv`; status changes update `job_pool.csv`; obstacles append to `blocker_queue.csv`; each run's totals accumulate into `data/daily_dashboard.csv` (one row per day — add to today's row, never create a second). Never write a verification code, password, or other secret into any CSV, log, or summary.
 
@@ -54,19 +54,21 @@ Write as you go: every attempt (including failures) appends to `application_log.
 ## Run loop
 
 1. **Pre-run.** Read the five files. If `candidate_profile.json` is missing or still unfilled (`candidate.legal_name` and `candidate.email` are empty strings — a complete-looking skeleton of `""` is NOT set up), offer the setup interview (`references/setup.md`) — offer, never enter it uninvited. If `email_access = read_only`, record the Sent-folder tripwire baseline (`references/ats-notes.md`, Cross-ATS). Re-verify leftover `Parked at submit` tabs and re-check `Pending confirmation` jobs before new work.
-2. **Ingest.** Add new `queue.txt` lines to `job_pool.csv` as `Pending`; skip URLs already present. `http…` lines are bare URLs; `{…}` lines are JSON whose fields fill `job_title`, `company`, `location`, `level` (missing keys stay empty). Leave `posted_date` and `ats` empty until the job is opened. Skip a trailing line with no newline — it is still being written. Sanitise posting-derived text (strip newlines/control characters, collapse whitespace, truncate 200/120/120). Malformed lines are reported and skipped, never guessed at.
+2. **Ingest.** Add new `queue.txt` lines to `job_pool.csv` as `Pending`; skip URLs already present. `http…` lines are bare URLs; `{…}` lines are JSON whose fields fill `job_title`, `company`, `location`, `level` (missing keys stay empty; `tier` and `score` are search metadata — ignore them here). Leave `posted_date` and `ats` empty until the job is opened. Skip a trailing line with no newline — it is still being written. Sanitise posting-derived text (strip newlines/control characters, collapse whitespace, truncate 200/120/120). Malformed lines are reported and skipped, never guessed at.
 3. **Apply, one job at a time, never waiting on the user.** Per job: open the URL in the run's task space → closed/expired posting → `Skipped` → identify the ATS (`references/ats-notes.md`) → choose the résumé → fill every page (Operating a page, below) → résumé readback → end per `auto_submit` → record. After each job run one `listTabs()` and one dashboard DOM read (`references/dashboard.md`): a job whose blocker the user cleared is scheduled next, ahead of new jobs. When a job hits a blocker the user can clear, park its tab, add a dashboard row, continue. At most 20 parked jobs at once (dashboard excluded); when full, follow the eviction order in `references/dashboard.md` — a full budget never stops the run. Close the tab after `Submitted` / `Skipped` / `Blocked`; keep only parked tabs.
 4. **Wrap-up.** If a tripwire baseline was recorded, re-read the Sent folder and compare — any change means a message was sent during the run: record `Blocked` / `email-access`, alert the user loudly, treat the run as compromised. Update `daily_dashboard.csv`. Scan `blocker_queue.csv`: any (`blocker_category`, ATS) pair appearing twice or more becomes an `automation_rules.csv` row — this is the only learning loop. Close the dashboard if no tabs are parked, else leave it with the stopped banner.
 
 ## Operating a page
 
-The per-page loop is specified in `references/page-loop.md`: walker (page → fields JSON) → decide (field → source) → driver (fill + readback). Until its scripts ship, fill pages by the same discipline by hand:
+The scripts are the executor (`references/page-loop.md` has the exact calls and JSON shapes); the model decides only what the scripts cannot. Per page, with `$JOB_DIR = ~/job-search/data/pages/<job_id>/`:
 
-- Snapshot once per page; fill every field on the page in one script; read every value back. "Option clicked AND field reads back the expected value" is the only acceptable assertion — "nothing looked wrong" is not.
-- Values come only from `candidate_profile.json` / `answer_bank.md` / `resume_rules.csv`; a `never_guess` label stops the page (`Needs user`, dashboard row). Customised free text (why this company, cover letter) is written from `answer_bank.md` facts, short, and never cached as a rule.
-- Control handling is per ATS: `references/ats-notes.md` holds the verified methods (Workday prompt dropdowns, Greenhouse react-select, segmented code boxes, uploads, submit endings). A method not listed there is tried once, then the field is a blocker — never the same failing script three times.
-- Register the confirmation wait BEFORE clicking submit; URL change OR confirmation text, first wins (`references/blockers.md` §2).
-- Email verification codes: spawn `email-code-reader` exactly as `references/blockers.md` describes; never read mail yourself in the form's task space.
+1. `formfill.js` mode `walk` (inside `ego-browser nodejs`) → `fields.json` + a one-line-per-field table. Read the table; never re-snapshot the page to "double check".
+2. `decide.py decide --job-dir $JOB_DIR --company …` → `decisions.json`. `ask_user` non-empty → the page stops (`Needs user`, park, dashboard row). `flags: ai_prohibited` → `Skipped`. `fields.json.flags`: `closed` → `Skipped`; `login_wall`, `captcha` → blocker; `captcha_present` alone is noise. The local model (`decide_model`) runs inside this step; a `laya … unavailable` line is informational — the fields are simply marked `LLM`.
+3. Only if `llm[]` is non-empty: answer those fields — once, as one JSON file — from `candidate_profile.json` / `answer_bank.md` facts, then `decide.py merge --llm $JOB_DIR/llm.json`. Free text is short, factual, never a guessed fact, never climbing. Never answer a field the gate sent to `ASK_USER`.
+4. `formfill.js` mode `fill` → `results.json`. Every result is a readback — "option clicked AND the field reads back the expected value"; the driver already tried its two methods, so an `ok=false` gets at most **one** manual attempt from `references/ats-notes.md`, then it is a blocker. Never the same failing script three times.
+5. `formfill.js` mode `next` → the next page's `fields.json` (or the validation errors) → back to 2. On the last page, per `auto_submit`: `off` → park in front of the submit button; `on` → mode `submit`, which registers the wait before clicking and writes `submit.json` — that file is the evidence for the confirmation rule (`references/blockers.md` §2); `reason: timeout` with no matched text is `Pending confirmation`, not `Submitted`.
+
+Email verification codes: spawn `email-code-reader` exactly as `references/blockers.md` describes; never read mail yourself in the form's task space. After touching any script, run the fixture (`scripts/fixtures/form.html`) before a real page.
 
 ## Task spaces and tabs
 
@@ -76,7 +78,7 @@ One task space per run (or per subagent — never share). Close a job's tab befo
 
 Only when the user asks ("find me jobs", "search for X") — never at run start, never because the queue is empty. Preconditions: `data/search_profile.csv` has a row, else tell the user `No search profile yet. Tell me what roles and locations to search for and I'll write one.` A failed search is not a blocker; write nothing to `blocker_queue.csv`.
 
-Spawn the `job-searcher` agent (`agents/job-searcher.md`) with the six fields from `search_profile.csv` (`KEYWORDS, LOCATIONS, REMOTE, POSTED_WITHIN_HOURS, REQUIREMENTS, MAX_RESULTS`; `MAX_RESULTS` = the user's number if they gave one). It appends JSON lines to `queue.txt` and returns one line (`OK APPENDED <n> EXHAUSTED|MORE_AVAILABLE …` or `ERR …`); relay it plainly. `EXHAUSTED` is not an error — suggest broadening `search_profile.csv`. At most **two** LinkedIn agents or tabs at any time; on the first security challenge every LinkedIn agent stops (`LINKEDIN_STOP` file in the data directory). Ingestion of the new lines is Run loop step 2.
+Spawn the `job-searcher` agent (`agents/job-searcher.md`) with the six fields from `search_profile.csv` (`KEYWORDS, LOCATIONS, REMOTE, POSTED_WITHIN_HOURS, REQUIREMENTS, MAX_RESULTS`; `MAX_RESULTS` = the user's number if they gave one, else no cap). The agent runs `scripts/search.js` (crawl, one task space and one tab per source, pacing and the LinkedIn stop file built in) and `scripts/classify.py` (hard filters → rules ranking → tiers A–D, the local model in the shadow), which appends tier A/B lines to `queue.txt` — `references/search-loop.md` has the files and the rules. It returns one line (`OK APPENDED <n> EXHAUSTED|MORE_AVAILABLE …` or `ERR …`); relay it plainly. `EXHAUSTED` is not an error — suggest broadening `search_profile.csv`. At most **two** LinkedIn agents or tabs at any time; on the first security challenge every LinkedIn instance stops (`data/LINKEDIN_STOP`; the user deletes it). Ingestion of the new lines is Run loop step 2. The run's `ranked.csv` / `dropped.csv` under `data/search/<date>/` are the audit trail if the user asks why a posting was or was not queued.
 
 ## Progress reporting
 
@@ -94,6 +96,7 @@ When the parked-tab budget is full, say what was done about it, every time:
 - `references/blockers.md` — states, the strict confirmation rule, the automation ladder, the 12 blocker categories and their procedures. Read before operating any application page.
 - `references/ats-notes.md` — per-ATS fingerprints, verified control methods, confirmation evidence, email patterns, cross-ATS rules. Read before filling on an ATS.
 - `references/page-loop.md` — the walker → decide → driver loop, JSON shapes, `field_rules.csv`.
+- `references/search-loop.md` — search.js → classify.py → queue.txt: run-directory files, built-in pacing, ranking rules, the model's shadow role.
 - `references/dashboard.md` — the blocker dashboard page, its helpers, the between-jobs poll.
 - `references/setup.md` — first-run interview.
 - `agents/email-code-reader.md`, `agents/job-searcher.md` — the two subagents.
