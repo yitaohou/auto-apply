@@ -308,7 +308,7 @@ class Model:
             return out
         for i in range(0, len(todo), batch):
             chunk = todo[i:i + batch]
-            res = self.client.batch([state_for(r, stack) for _, r in chunk], QUESTIONS, model=self.lc.ML_MODEL, max_len=self.lc.ML_MAX_LEN, timeout=900)
+            res = self.client.batch([state_for(r, stack) for _, r in chunk], QUESTIONS, model=self.client.ml_model, max_len=self.lc.ML_MAX_LEN, timeout=900)
             self.calls += 1
             if len(res) != len(chunk):
                 self.log(f"laya batch returned {len(res)}/{len(chunk)} ({self.client.error}) — remaining postings fall back to rules")
@@ -771,7 +771,12 @@ def weak_labels(o):
 
 def cmd_export(args, log):
     """laya-train rows: one per (posting, choice question) with a label. Labels come from the regex
-    rules (weak but plentiful) and from the judge's answers file (strong); the judge wins."""
+    rules (weak but plentiful) and from the judge's answers file (strong); the judge wins. A fixed
+    fraction of the judged postings (--holdout, every question of theirs) goes to search_eval.jsonl
+    instead, so `laya_eval.py eval --rows … --model autoapply-search` measures against labels the
+    model never saw. Rules rows are capped per (question, label) (--cap) — the regexes produce
+    thousands of easy "no" rows that would swamp the judged ones and make training take a day."""
+    import random
     data, run_dir = Path(args.data).expanduser(), Path(args.data).expanduser() / "data" / "search" / args.run
     caps = sorted(run_dir.glob("capture*.jsonl")) + [Path(p).expanduser() for p in (args.capture or [])]
     recs, _ = load_capture(caps)
@@ -779,28 +784,43 @@ def cmd_export(args, log):
     stack = candidate_stack(data)
     out_dir = data / "data" / "laya"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / "search_train.jsonl"
-    n, per_q = 0, collections.Counter()
-    with open(out, "w", encoding="utf-8") as f:
+    judged_keys = sorted(k for k, o in recs.items() if o["id"] in judged or k in judged)
+    random.Random(19).shuffle(judged_keys)
+    hold = set(judged_keys[:int(len(judged_keys) * args.holdout)])
+    n, per_q, by, capped = collections.Counter(), collections.Counter(), collections.Counter(), collections.Counter()
+    keys = list(recs); random.Random(23).shuffle(keys)  # so the cap keeps a random subset, not the first N captured
+    recs = {k: recs[k] for k in keys}
+    with open(out_dir / "search_train.jsonl", "w", encoding="utf-8") as ftr, open(out_dir / "search_eval.jsonl", "w", encoding="utf-8") as fev:
         for key, o in recs.items():
             if not (o.get("jd") or "").strip():
                 continue
             labels = weak_labels(o)
-            for q, v in (judged.get(o["id"]) or judged.get(key) or {}).items():
+            ans = judged.get(o["id"]) or judged.get(key) or {}
+            for q, v in ans.items():
                 if q in QUESTIONS and QUESTIONS[q]["type"] == "choice":
                     labels[q] = ("yes" if v else "no") if isinstance(v, bool) else str(v)
             state = state_for(o, stack)
+            f = fev if key in hold else ftr
             for q, v in labels.items():
                 if v not in QUESTIONS[q]["criteria"]:
                     continue
+                src = "judge" if q in ans else "rules"
+                if src == "rules" and key not in hold:
+                    if capped[(q, v)] >= args.cap:
+                        continue
+                    capped[(q, v)] += 1
                 f.write(json.dumps({"state": state, "questions": {q: QUESTIONS[q]}, "expected": {q: v},
-                                    "meta": {"id": o["id"], "source": o["source"], "q": q, "by": "judge" if q in (judged.get(o["id"]) or {}) else "rules"}},
-                                   ensure_ascii=False) + "\n")
-                n += 1
-                per_q[q] += 1
-    log(f"wrote {n} rows to {out} · " + ", ".join(f"{q}={c}" for q, c in sorted(per_q.items())))
-    log(f"train with: {data}/.venv-laya/bin/laya-train --data {out} --base convaiinnovations/laya-multilingual "
-        f"--out {out_dir}/search-checkpoint --max-len {ML_MAX_LEN}   (then LAYA_EXTRA_MODELS=search={out_dir}/search-checkpoint for laya-serve)")
+                                    "meta": {"id": o["id"], "source": o["source"], "q": q, "by": src}}, ensure_ascii=False) + "\n")
+                n["eval" if key in hold else "train"] += 1
+                if key not in hold:
+                    per_q[q] += 1; by[src] += 1
+    log(f"wrote {n['train']} train rows ({by['rules']} rules + {by['judge']} judge) to {out_dir}/search_train.jsonl · "
+        + ", ".join(f"{q}={c}" for q, c in sorted(per_q.items())))
+    log(f"wrote {n['eval']} eval rows from {len(hold)} judged postings to {out_dir}/search_eval.jsonl")
+    import laya_client
+    log(f"train with: {data}/.venv-laya/bin/laya-train --data {out_dir}/search_train.jsonl --eval {out_dir}/search_eval.jsonl "
+        f"--base {laya_client.ML_MODEL} --out {out_dir}/search-checkpoint --max-len 4096 --device mps"
+        f"   (restart laya-serve: the checkpoint loads as model {laya_client.ML_FT_MODEL} and classify.py uses it automatically)")
     return 0
 
 
@@ -813,7 +833,9 @@ def main(argv=None):
     ap.add_argument("--engine", choices=["rules", "laya"], default="rules", help="primary engine (rules until the model is fine-tuned)")
     ap.add_argument("--shadow", dest="shadow", action="store_true", default=True, help="also ask the model and keep its columns (default)")
     ap.add_argument("--no-shadow", dest="shadow", action="store_false", help="rules only; no model server needed")
-    ap.add_argument("--answers", help="merge: JSON {id: {question: answer}} from the judge")
+    ap.add_argument("--answers", help="merge/export: JSON {id: {question: answer}} from the judge")
+    ap.add_argument("--holdout", type=float, default=0.2, help="export: fraction of judged postings kept for search_eval.jsonl")
+    ap.add_argument("--cap", type=int, default=300, help="export: max rules-labelled rows per (question, label)")
     ap.add_argument("--tiers", default="A,B")
     args = ap.parse_args(argv)
     run_dir = Path(args.data).expanduser() / "data" / "search" / args.run

@@ -120,9 +120,15 @@ only when that list looks right to the user.
 **Fine-tuning path:** `export` writes `data/laya/search_train.jsonl` — one laya-train row
 per (posting, choice question) with a label from the regex rules where they have real
 evidence (title says intern, JD says bilingual required, …) and from the judge's answers
-where present (judge wins). Train with `.venv-laya/bin/laya-train --data … --base
-convaiinnovations/laya-multilingual --out data/laya/search-checkpoint --max-len 8192`,
-register the checkpoint with `LAYA_EXTRA_MODELS`, restart the server, then `report`.
+where present (judge wins; `--answers` takes the same `{id: {question: answer}}` file as
+`merge`). Rules rows are capped per (question, label) (`--cap 300`) so the easy "no"s do
+not swamp the judged ones; `--holdout 0.2` of the judged postings go to
+`search_eval.jsonl` instead. Train with the command `export` prints
+(`laya-train … --base multilingual --out data/laya/search-checkpoint --max-len 4096`),
+restart the server — the checkpoint loads as `autoapply-search` and `rank` uses it
+automatically — then score it: `laya_eval.py eval --rows data/laya/search_eval.jsonl
+--model autoapply-search --max-len 4096`. Zero-shot on that holdout (2026-10-19, 60 JDs)
+the hard flags agree 15–30 % (everything "yes"), level 53 %, company type 57 %.
 
 `queue` appends `{"url","title","company","location","level","tier","score"}` lines for
 the chosen tiers, deduped against `job_pool.csv` and the existing queue (a trailing
