@@ -164,6 +164,15 @@ class LayaClient:
             self.error = f"{type(e).__name__}: {e}"
 
     # --- lifecycle ---
+    @staticmethod
+    def _checkpoint(d):
+        """The loadable directory: laya-train writes the final weights to `d` and, after every
+        epoch, to `d/checkpoint_latest` — an interrupted run still leaves a usable model there."""
+        for c in (d, d / "checkpoint_latest"):
+            if (c / "model.safetensors").is_file():
+                return c
+        return None
+
     def _health(self):
         try:
             with urllib.request.urlopen(self.base + "/health", timeout=3) as r:
@@ -190,12 +199,12 @@ class LayaClient:
                        LAYA_DEFAULT_MODEL=BASE_MODEL, LAYA_LOG_LEVEL=os.environ.get("LAYA_LOG_LEVEL", "warning"),
                        LAYA_MAX_LOADED=os.environ.get("LAYA_MAX_LOADED", "3"))
             extra = {}  # fine-tuned checkpoints: registered and preloaded beside the base models
-            ckpt = self.laya_dir / "checkpoint"
-            if ckpt.is_dir():  # laya_eval.py train
+            ckpt = self._checkpoint(self.laya_dir / "checkpoint")  # laya_eval.py train
+            if ckpt:
                 extra[FT_MODEL] = str(ckpt)
                 env["LAYA_DEFAULT_MODEL"] = FT_MODEL
-            sckpt = self.laya_dir / "search-checkpoint"
-            if sckpt.is_dir():  # classify.py export → laya-train
+            sckpt = self._checkpoint(self.laya_dir / "search-checkpoint")  # classify.py export → laya-train
+            if sckpt:
                 extra[ML_FT_MODEL] = str(sckpt)
             if extra:
                 env["LAYA_EXTRA_MODELS"] = json.dumps(extra)
