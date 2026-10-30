@@ -124,11 +124,19 @@ where present (judge wins; `--answers` takes the same `{id: {question: answer}}`
 `merge`). Rules rows are capped per (question, label) (`--cap 300`) so the easy "no"s do
 not swamp the judged ones; `--holdout 0.2` of the judged postings go to
 `search_eval.jsonl` instead. Train with the command `export` prints
-(`laya-train … --base multilingual --out data/laya/search-checkpoint --max-len 4096`),
-restart the server — the checkpoint loads as `autoapply-search` and `rank` uses it
-automatically — then score it: `laya_eval.py eval --rows data/laya/search_eval.jsonl
---model autoapply-search --max-len 4096`. Zero-shot on that holdout (2026-10-19, 60 JDs)
-the hard flags agree 15–30 % (everything "yes"), level 53 %, company type 57 %.
+(`laya-train … --base multilingual --out data/laya/search-checkpoint --max-len 2048
+--micro-batch 1 --loss soft-ce`; that is the largest footprint a 32 GB Apple-silicon machine
+takes, and it needs the GPU alone — stop laya-serve first; ~9 h unattended), restart the
+server — the checkpoint loads as `autoapply-search` and `rank` uses it automatically — then
+score it: `laya_eval.py eval --rows data/laya/search_eval.jsonl --model autoapply-search
+--max-len 2048`.
+
+Holdout of 60 judged JDs (2026-10-29), zero-shot → fine-tuned (1 epoch, 4,685 rows =
+3.2K rules + 1.9K judge): ai_ban 27 → 100 %, clearance 25 → 100 %, us_only 48 → 100 %,
+intern 15 → 95 %, french_required 30 → 92 %, ai_core 30 → 92 %, level 53 → 75 %,
+company_type 57 → 65 %. The hard flags are usable as a shadow for the rules engine; level and
+company type still fall below the 90 % bar (level confuses senior ↔ intermediate; company type
+over-predicts bank), so the LLM judge stays on those two until more judged rows exist.
 
 `queue` appends `{"url","title","company","location","level","tier","score"}` lines for
 the chosen tiers, deduped against `job_pool.csv` and the existing queue (a trailing

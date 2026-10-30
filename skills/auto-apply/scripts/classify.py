@@ -775,7 +775,12 @@ def cmd_export(args, log):
     fraction of the judged postings (--holdout, every question of theirs) goes to search_eval.jsonl
     instead, so `laya_eval.py eval --rows … --model autoapply-search` measures against labels the
     model never saw. Rules rows are capped per (question, label) (--cap) — the regexes produce
-    thousands of easy "no" rows that would swamp the judged ones and make training take a day."""
+    thousands of easy "no" rows that would swamp the judged ones and make training take a day.
+    A repost of a held-out JD (same text, new id) is dropped from train so nothing leaks.
+    Training footprint on a 32 GB Apple-silicon box: 2048 tokens × micro-batch 1 × soft-ce is the
+    most that fits (3072/4096 or rlcd's 4 samples run out of MPS memory; gradient checkpointing
+    crashes in Metal on macOS 14.0), and it needs the GPU to itself — stop laya-serve first.
+    ~1 epoch over 4.7K rows ≈ 9 h unattended, 2–3× longer while the machine is in use."""
     import random
     data, run_dir = Path(args.data).expanduser(), Path(args.data).expanduser() / "data" / "search" / args.run
     caps = sorted(run_dir.glob("capture*.jsonl")) + [Path(p).expanduser() for p in (args.capture or [])]
@@ -787,6 +792,7 @@ def cmd_export(args, log):
     judged_keys = sorted(k for k, o in recs.items() if o["id"] in judged or k in judged)
     random.Random(19).shuffle(judged_keys)
     hold = set(judged_keys[:int(len(judged_keys) * args.holdout)])
+    hold_states = {state_for(recs[k], stack) for k in hold}
     n, per_q, by, capped = collections.Counter(), collections.Counter(), collections.Counter(), collections.Counter()
     keys = list(recs); random.Random(23).shuffle(keys)  # so the cap keeps a random subset, not the first N captured
     recs = {k: recs[k] for k in keys}
@@ -800,6 +806,8 @@ def cmd_export(args, log):
                 if q in QUESTIONS and QUESTIONS[q]["type"] == "choice":
                     labels[q] = ("yes" if v else "no") if isinstance(v, bool) else str(v)
             state = state_for(o, stack)
+            if key not in hold and state in hold_states:
+                continue  # a repost of a held-out JD (same text, new id): never let it leak into train
             f = fev if key in hold else ftr
             for q, v in labels.items():
                 if v not in QUESTIONS[q]["criteria"]:
@@ -819,7 +827,8 @@ def cmd_export(args, log):
     log(f"wrote {n['eval']} eval rows from {len(hold)} judged postings to {out_dir}/search_eval.jsonl")
     import laya_client
     log(f"train with: {data}/.venv-laya/bin/laya-train --data {out_dir}/search_train.jsonl --eval {out_dir}/search_eval.jsonl "
-        f"--base {laya_client.ML_MODEL} --out {out_dir}/search-checkpoint --max-len 4096 --device mps"
+        f"--base {laya_client.ML_MODEL} --out {out_dir}/search-checkpoint --max-len {laya_client.ML_MAX_LEN} "
+        f"--epochs 1 --micro-batch 1 --grad-accum 32 --loss soft-ce --shuffle-options --device mps"
         f"   (restart laya-serve: the checkpoint loads as model {laya_client.ML_FT_MODEL} and classify.py uses it automatically)")
     return 0
 

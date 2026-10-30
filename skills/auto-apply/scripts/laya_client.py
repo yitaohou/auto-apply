@@ -21,7 +21,7 @@ BASE_MODEL = "typed-decisions"
 FT_MODEL = "autoapply-ft"                 # name given to data/laya/checkpoint when it exists
 ML_MODEL = "multilingual"                 # laya-multilingual (mmBERT, 8K ctx) — classify.py's whole-JD model
 ML_FT_MODEL = "autoapply-search"          # name given to data/laya/search-checkpoint (classify.py export + laya-train)
-ML_MAX_LEN = 8192
+ML_MAX_LEN = 2048                         # what search-checkpoint was trained and calibrated at (≈ 8K chars, p90 of stripped JDs); the base model accepts 8192
 ADOPT_CACHE, ADOPT = 0.85, 0.60           # p ≥ 0.85 adopt + cache · 0.60–0.85 adopt, no cache · < 0.60 LLM
 MAX_OPTIONS_IN_STATE = 20
 
