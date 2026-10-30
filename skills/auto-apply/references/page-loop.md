@@ -87,7 +87,7 @@ Resolution order (`decide.py decide`, model-independent):
    - The server (`~/job-search/.venv-laya/bin/laya-serve`, `127.0.0.1:8765`) is started on demand and stays up; `data/laya/checkpoint` (from `laya_eval.py train`) is registered as `autoapply-ft` and preferred. If the server cannot start, the summary says `unavailable` and the fields fall through to the LLM marker — never a blocker.
 5. **`LLM` marker.** Free text gets `note: free text`.
 
-`laya_eval.py report` — agreement and confidence buckets from the shadow log; `rules` — the same against `field_rules.csv` rows; `export` / `train` — fine-tuning rows and the `laya-train` wrapper. Switch-over rule (plan): ≥ 50 pages, agreement ≥ 90 %, high-confidence errors < 2 %.
+`laya_eval.py report` — agreement and confidence buckets from the shadow log; `rules` — the same against `field_rules.csv` rows; `export` / `train` — fine-tuning rows and the `laya-train` wrapper (`--synth` adds `field_synth.py` rows: hand-written label phrasings per profile key, each validated against the seed rules by `field_synth.py --check`; `--real-as-eval` keeps every real row out of training); `eval` — scores the loaded checkpoint on `rows/eval.jsonl`. Switch-over rule (plan): ≥ 50 real pages, agreement ≥ 90 %, high-confidence errors < 2 %.
 
 **The skill's LLM step** (`merge`): answer only the `llm[]` entries, once per page, into `llm.json` — `{"f3": "value", "f7": {"value": "...", "cache": false}}`; a value may be a source string (`profile:candidate.city`, `const:Yes`, `option:2`). Free text comes from `answer_bank.md` facts, short, never climbing, never a guessed fact. `merge` resolves the values, rewrites `decisions.json`, and caches `by=llm` rows except free text, EEO, and values over 120 characters.
 

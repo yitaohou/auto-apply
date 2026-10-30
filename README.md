@@ -78,7 +78,12 @@ The scripts start `laya-serve` on `127.0.0.1:8765` on first use and keep it runn
 and confidence distribution from the shadow log; switch to `laya` once agreement is
 ≥ 90 % over ≥ 50 pages with under 2 % high-confidence errors. `laya_eval.py train`
 fine-tunes the checkpoint on the shadow log (`data/laya/checkpoint`, picked up on the
-next server start as model `autoapply-ft`).
+next server start as model `autoapply-ft`). While real pages are few, `train --synth
+--real-as-eval` adds `field_synth.py` rows — label phrasings per profile key, every one
+checked against `decide.py`'s own rules — and keeps every real row for evaluation;
+`laya_eval.py eval` scores the loaded checkpoint on them. Labels never come from the
+model: form rows carry the decision finally taken (rule, cache, or the skill's merge),
+JD rows (`classify.py export`) carry regex evidence plus the judge's answers.
 
 ## Starting a run
 

@@ -20,7 +20,8 @@ HOST, PORT = "127.0.0.1", 8765
 BASE_MODEL = "typed-decisions"
 FT_MODEL = "autoapply-ft"                 # name given to data/laya/checkpoint when it exists
 ML_MODEL = "multilingual"                 # laya-multilingual (mmBERT, 8K ctx) — classify.py's whole-JD model
-ML_MAX_LEN = 8192
+ML_FT_MODEL = "autoapply-search"          # name given to data/laya/search-checkpoint (classify.py export + laya-train)
+ML_MAX_LEN = 2048                         # what search-checkpoint was trained and calibrated at (≈ 8K chars, p90 of stripped JDs); the base model accepts 8192
 ADOPT_CACHE, ADOPT = 0.85, 0.60           # p ≥ 0.85 adopt + cache · 0.60–0.85 adopt, no cache · < 0.60 LLM
 MAX_OPTIONS_IN_STATE = 20
 
@@ -63,7 +64,7 @@ KEYS = {
         "status": ("citizen vs permanent resident vs permit status", "profile:work_authorization.current_authorization"),
         "citizenship": ("nationality or country of citizenship", "profile:work_authorization.citizenship_country"),
         "background_check": ("consent to a background check", "profile:background.background_check_consent_yes"),
-        "criminal": ("criminal record or conviction", "const:No"),
+        "criminal": ("criminal record or conviction", "profile:work_authorization.criminal_record_no"),
         "licence": ("valid driver's licence", "const:Yes"),
         "age": ("18 or older / legal age", "const:Yes"),
         "conflict": ("conflict of interest, relatives at the company, non-compete, NDA, prior employment here", "const:No"),
@@ -88,7 +89,7 @@ KEYS = {
     },
     "f_preference": {
         "start_date": ("available start date or availability", "profile:current_status.available_start_date"),
-        "notice": ("notice period", "profile:current_status.notice_period"),
+        "notice": ("notice period", "profile:current_status.available_start_date"),
         "salary": ("salary or compensation expectation", "LLM:use the figure posted in the JD; profile default 110000 CAD (compensation.single_number_answer)"),
         "relocate": ("willing to relocate", "profile:location_preferences.willing_to_relocate"),
         "work_mode": ("remote, hybrid, on-site or return-to-office willingness", "answer:return_to_office_hybrid_onsite_willingness_user_approved_2026_08_11"),
@@ -154,6 +155,7 @@ class LayaClient:
         self.laya_dir = self.data / "data" / "laya"
         self.log = log
         self.model = None
+        self.ml_model = ML_MODEL
         self.ready = False
         self.error = None
         try:
@@ -162,6 +164,15 @@ class LayaClient:
             self.error = f"{type(e).__name__}: {e}"
 
     # --- lifecycle ---
+    @staticmethod
+    def _checkpoint(d):
+        """The loadable directory: laya-train writes the final weights to `d` and, after every
+        epoch, to `d/checkpoint_latest` — an interrupted run still leaves a usable model there."""
+        for c in (d, d / "checkpoint_latest"):
+            if (c / "model.safetensors").is_file():
+                return c
+        return None
+
     def _health(self):
         try:
             with urllib.request.urlopen(self.base + "/health", timeout=3) as r:
@@ -187,11 +198,17 @@ class LayaClient:
             env = dict(os.environ, LAYA_HOST=self.host, LAYA_PORT=str(self.port), LAYA_MODELS=BASE_MODEL,
                        LAYA_DEFAULT_MODEL=BASE_MODEL, LAYA_LOG_LEVEL=os.environ.get("LAYA_LOG_LEVEL", "warning"),
                        LAYA_MAX_LOADED=os.environ.get("LAYA_MAX_LOADED", "3"))
-            ckpt = self.laya_dir / "checkpoint"
-            if ckpt.is_dir():  # fine-tuned checkpoint (laya_eval.py train): registered and preloaded beside the base
-                env["LAYA_EXTRA_MODELS"] = json.dumps({FT_MODEL: str(ckpt)})
-                env["LAYA_MODELS"] = BASE_MODEL + "," + FT_MODEL
+            extra = {}  # fine-tuned checkpoints: registered and preloaded beside the base models
+            ckpt = self._checkpoint(self.laya_dir / "checkpoint")  # laya_eval.py train
+            if ckpt:
+                extra[FT_MODEL] = str(ckpt)
                 env["LAYA_DEFAULT_MODEL"] = FT_MODEL
+            sckpt = self._checkpoint(self.laya_dir / "search-checkpoint")  # classify.py export → laya-train
+            if sckpt:
+                extra[ML_FT_MODEL] = str(sckpt)
+            if extra:
+                env["LAYA_EXTRA_MODELS"] = json.dumps(extra)
+                env["LAYA_MODELS"] = ",".join([BASE_MODEL] + list(extra))
             self.laya_dir.mkdir(parents=True, exist_ok=True)
             logf = open(self.laya_dir / "serve.log", "ab")
             subprocess.Popen([exe], env=env, stdout=logf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
@@ -207,6 +224,7 @@ class LayaClient:
             return False
         loaded = h.get("loaded") or []
         self.model = FT_MODEL if FT_MODEL in loaded else (BASE_MODEL if BASE_MODEL in loaded else (loaded[0] if loaded else None))
+        self.ml_model = ML_FT_MODEL if ML_FT_MODEL in loaded else ML_MODEL  # classify.py's JD model
         if not self.model:
             self.error = "laya-serve has no model loaded"
             return False
@@ -314,16 +332,17 @@ for _cat, _keys in KEYS.items():
         else:
             SOURCE_TO_LABEL[_src] = (_cat, _k)
 SOURCE_TO_LABEL["profile:candidate.preferred_name"] = ("a_contact", "first_name")
-SOURCE_TO_LABEL["profile:work_authorization.criminal_record"] = ("b_legal", "criminal")
 SOURCE_TO_LABEL["profile:candidate.portfolio_url"] = ("a_contact", "website")
 # label regex per ambiguous key (first hit wins, in this order)
 KEY_LABEL_RE = [
+    ("b_legal", "age", r"\b18\b|legal (working )?age|years or older"),
+    ("b_legal", "licence", r"licen[cs]e"),
+    ("f_preference", "notice", r"notice"),
+    ("f_preference", "start_date", r"start|availab|earliest|when"),
     ("i_compliance", "signature", r"signature|^sign\b|e-?sign|type your (full )?name"),
     ("i_compliance", "marketing", r"marketing|newsletter|promotional|text message|sms|talent (community|network)|job alerts"),
     ("i_compliance", "consent", r"certify|confirm|acknowledge|agree|attest|consent|understand|accept|have read|declare|terms|privacy"),
-    ("b_legal", "licence", r"licen[cs]e"),
-    ("b_legal", "age", r"\b18\b|legal age|years or older"),
-    ("b_legal", "background_check", r"background check"),
+    ("b_legal", "background_check", r"background (check|verification)"),
     ("b_legal", "criminal", r"criminal|convict"),
     ("f_preference", "prior_employee", r"previously (worked|employed)|former employee|worked (for|at) (us|this company)|ever been employed"),
     ("b_legal", "conflict", r"relat|family member|household|relationship|conflict of interest|outside business|directorship|secondary employment|non-?compete|non-?disclosure|confidentiality|restriction"),
